@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -58,11 +59,13 @@ fun ChatScreen(
     otherUserName: String,
     otherUserPhoto: String,
     onBack: () -> Unit,
+    onStartCall: (otherUid: String, otherUserName: String, otherUserPhoto: String) -> Unit,
     viewModel: ChatViewModel = viewModel(factory = ChatViewModel.Factory(chatId))
 ) {
     val messages by viewModel.messages.collectAsState()
     var text by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    val otherUid = remember(chatId) { chatId.split("_").firstOrNull { it != viewModel.currentUid }.orEmpty() }
 
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) viewModel.sendImage(uri)
@@ -88,6 +91,14 @@ fun ChatScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { onStartCall(otherUid, otherUserName, otherUserPhoto) },
+                        enabled = otherUid.isNotBlank()
+                    ) {
+                        Icon(Icons.Filled.Call, contentDescription = "Voice call")
                     }
                 }
             )

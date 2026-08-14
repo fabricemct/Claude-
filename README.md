@@ -11,10 +11,31 @@ backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging).
 - Real-time text messaging
 - Image sharing in a conversation (uploaded to Firebase Storage)
 - Editable profile (name, status, photo)
+- 1:1 voice calls (WebRTC, signaled through Firestore — see "Voice calls" below)
 
-Not included yet: voice/video calls, end-to-end encryption, group chats,
+Not included yet: video calls, end-to-end encryption, group chats,
 status/stories, push notification delivery (the FCM token is stored per user,
 but no Cloud Function sends notifications yet).
+
+## Voice calls
+
+Tapping the phone icon in a conversation starts a 1:1 audio call using
+[WebRTC](https://webrtc.org/) for the actual audio stream. Firestore is only
+used to exchange the connection setup data (SDP offer/answer and ICE
+candidates) between the two phones — no audio ever passes through Firebase.
+
+- A call only rings while the recipient has the app open on the chat list
+  screen; there's no background/lock-screen ringing yet (that would require a
+  foreground service with a full-screen notification — a natural next step).
+- Only Google's public STUN servers are configured. This works for most
+  networks, but a small fraction of restrictive networks (symmetric NAT,
+  some corporate/campus Wi-Fi) may fail to connect without a TURN server,
+  which isn't included here.
+- The `calls` Firestore documents aren't automatically cleaned up after a
+  call ends — fine for testing, but worth adding a scheduled cleanup (or a
+  Cloud Function) before any real usage.
+- Microphone access is requested at runtime the first time you start or
+  answer a call.
 
 ## Project structure
 
@@ -74,6 +95,20 @@ service cloud.firestore {
           && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
       }
     }
+
+    match /calls/{callId} {
+      allow read, write: if request.auth != null
+        && request.auth.uid in [resource.data.callerId, resource.data.calleeId];
+      allow create: if request.auth != null
+        && request.auth.uid == request.resource.data.callerId;
+
+      match /callerCandidates/{candidateId} {
+        allow read, write: if request.auth != null;
+      }
+      match /calleeCandidates/{candidateId} {
+        allow read, write: if request.auth != null;
+      }
+    }
   }
 }
 ```
@@ -121,11 +156,17 @@ emulator or device (minSdk 24 / Android 7.0+).
   resolves to the same document.
 - `chats/{chatId}/messages/{messageId}`: `senderId`, `text` or `imageUrl`,
   `type`, `timestamp`
+- `calls/{callId}`: `callerId`, `calleeId`, `status` (`RINGING` / `ACCEPTED` /
+  `DECLINED` / `ENDED`), `offerSdp`, `answerSdp`, `createdAt`
+- `calls/{callId}/callerCandidates` and `.../calleeCandidates`: trickled ICE
+  candidates (`sdpMid`, `sdpMLineIndex`, `candidate`)
 
 ## Suggested next steps
 
 - Group chats (extend `participants` beyond 2, adjust the chat id scheme)
 - Push notifications via a Cloud Function triggered on new messages
 - End-to-end encryption
-- Voice/video calls (e.g. WebRTC)
+- Video calls (the WebRTC plumbing already supports adding a video track)
+- A TURN server for voice calls on restrictive networks, and a foreground
+  service so calls can ring outside the app
 - Message delivery/read receipts, typing indicators

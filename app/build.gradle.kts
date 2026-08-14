@@ -81,6 +81,9 @@ dependencies {
     // Image loading
     implementation("io.coil-kt:coil-compose:2.6.0")
 
+    // Voice calls (WebRTC signaled over Firestore)
+    implementation("io.getstream:stream-webrtc-android:1.1.1")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

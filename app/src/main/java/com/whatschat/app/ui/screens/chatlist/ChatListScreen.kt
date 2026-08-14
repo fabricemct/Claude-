@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -17,10 +18,15 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -38,9 +44,38 @@ fun ChatListScreen(
     onOpenChat: (chatId: String, otherUserName: String, otherUserPhoto: String) -> Unit,
     onOpenNewChat: () -> Unit,
     onOpenProfile: () -> Unit,
+    onAcceptCall: (callId: String, callerId: String, callerName: String, callerPhoto: String) -> Unit,
     viewModel: ChatListViewModel = viewModel()
 ) {
     val chats by viewModel.chats.collectAsState()
+    val incomingCall by viewModel.incomingCall.collectAsState()
+    var callerName by remember { mutableStateOf("") }
+    var callerPhoto by remember { mutableStateOf("") }
+
+    LaunchedEffect(incomingCall?.callId) {
+        val callerId = incomingCall?.callerId
+        val caller = if (callerId != null) viewModel.getUser(callerId) else null
+        callerName = caller?.name.orEmpty()
+        callerPhoto = caller?.photoUrl.orEmpty()
+    }
+
+    if (incomingCall != null) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text("Incoming call") },
+            text = { Text(callerName.ifBlank { "Someone" } + " is calling you") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val call = incomingCall ?: return@TextButton
+                    viewModel.dismissIncomingCall()
+                    onAcceptCall(call.callId, call.callerId, callerName.ifBlank { "Unknown" }, callerPhoto)
+                }) { Text("Accept") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.declineIncomingCall() }) { Text("Decline") }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
