@@ -53,6 +53,13 @@ class ChatViewModel(
         }
     }
 
+    fun sendSticker(emoji: String) {
+        val uid = currentUid ?: return
+        viewModelScope.launch {
+            chatRepository.sendSticker(chatId, uid, emoji)
+        }
+    }
+
     class Factory(private val chatId: String) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T = ChatViewModel(chatId) as T

@@ -102,6 +102,17 @@ class ChatRepository(
         saveMessage(chatId, senderId, message, previewText = "🎤 Voice message")
     }
 
+    suspend fun sendSticker(chatId: String, senderId: String, emoji: String) {
+        val message = Message(
+            messageId = UUID.randomUUID().toString(),
+            senderId = senderId,
+            text = emoji,
+            type = MessageType.STICKER,
+            timestamp = System.currentTimeMillis()
+        )
+        saveMessage(chatId, senderId, message, previewText = emoji)
+    }
+
     private suspend fun saveMessage(chatId: String, senderId: String, message: Message, previewText: String) {
         val chatDoc = chatsCollection.document(chatId)
         chatDoc.collection("messages").document(message.messageId).set(message).await()

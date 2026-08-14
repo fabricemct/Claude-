@@ -1,6 +1,6 @@
 package com.whatschat.app.data.model
 
-enum class MessageType { TEXT, IMAGE, AUDIO }
+enum class MessageType { TEXT, IMAGE, AUDIO, STICKER }
 
 data class Message(
     val messageId: String = "",

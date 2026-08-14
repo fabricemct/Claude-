@@ -6,6 +6,8 @@ import android.media.MediaPlayer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,11 +23,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -54,11 +58,15 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.whatschat.app.data.audio.PcmResampler
 import com.whatschat.app.data.audio.VoiceEffect
 import com.whatschat.app.data.audio.VoiceRecorder
 import com.whatschat.app.data.audio.WavFile
 import com.whatschat.app.data.model.Message
 import com.whatschat.app.data.model.MessageType
+import com.whatschat.app.ui.components.COMMON_EMOJIS
+import com.whatschat.app.ui.components.EmojiGridDialog
+import com.whatschat.app.ui.components.STICKER_EMOJIS
 import com.whatschat.app.ui.components.Avatar
 import com.whatschat.app.ui.theme.WaBubbleIncoming
 import com.whatschat.app.ui.theme.WaBubbleOutgoing
@@ -67,6 +75,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.ui.unit.sp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,6 +96,9 @@ fun ChatScreen(
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) viewModel.sendImage(uri)
     }
+
+    var showEmojiPicker by remember { mutableStateOf(false) }
+    var showStickerPicker by remember { mutableStateOf(false) }
 
     val voiceRecorder = remember { VoiceRecorder() }
     var isRecording by remember { mutableStateOf(false) }
@@ -129,15 +141,14 @@ fun ChatScreen(
             onDismissRequest = { pendingVoicePcm = null },
             title = { Text("Choose a voice") },
             text = {
-                Column {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     VoiceEffect.entries.forEach { effect ->
                         TextButton(onClick = {
                             val pcm = pendingVoicePcm ?: return@TextButton
-                            val headerRate = (VoiceRecorder.SAMPLE_RATE * effect.rateMultiplier).toInt()
+                            val resampled = PcmResampler.resample(pcm, VoiceRecorder.SAMPLE_RATE, effect)
                             val file = File(context.cacheDir, "voice_${System.currentTimeMillis()}.wav")
-                            WavFile.write(file, pcm, headerRate)
-                            val samples = pcm.size / 2
-                            val durationMs = if (headerRate > 0) samples.toLong() * 1000L / headerRate else 0L
+                            WavFile.write(file, resampled, VoiceRecorder.SAMPLE_RATE)
+                            val durationMs = (resampled.size / 2).toLong() * 1000L / VoiceRecorder.SAMPLE_RATE
                             viewModel.sendAudio(file, durationMs)
                             pendingVoicePcm = null
                         }) {
@@ -150,6 +161,26 @@ fun ChatScreen(
             dismissButton = {
                 TextButton(onClick = { pendingVoicePcm = null }) { Text("Cancel") }
             }
+        )
+    }
+
+    if (showEmojiPicker) {
+        EmojiGridDialog(
+            title = "Emoji",
+            emojis = COMMON_EMOJIS,
+            fontSize = 26.sp,
+            onDismiss = { showEmojiPicker = false },
+            onEmojiSelected = { emoji -> text += emoji }
+        )
+    }
+
+    if (showStickerPicker) {
+        EmojiGridDialog(
+            title = "Stickers",
+            emojis = STICKER_EMOJIS,
+            fontSize = 34.sp,
+            onDismiss = { showStickerPicker = false },
+            onEmojiSelected = { emoji -> viewModel.sendSticker(emoji) }
         )
     }
 
@@ -188,6 +219,12 @@ fun ChatScreen(
                     .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                IconButton(onClick = { showEmojiPicker = true }) {
+                    Icon(Icons.Filled.EmojiEmotions, contentDescription = "Emoji")
+                }
+                IconButton(onClick = { showStickerPicker = true }) {
+                    Icon(Icons.Filled.Star, contentDescription = "Stickers")
+                }
                 IconButton(onClick = { imagePicker.launch("image/*") }) {
                     Icon(Icons.Filled.Image, contentDescription = "Send image")
                 }
@@ -230,8 +267,16 @@ fun ChatScreen(
 
 @Composable
 private fun MessageBubble(message: Message, isOwn: Boolean) {
-    val bubbleColor = if (isOwn) WaBubbleOutgoing else WaBubbleIncoming
     val alignment = if (isOwn) Alignment.End else Alignment.Start
+
+    if (message.type == MessageType.STICKER) {
+        Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
+            Text(text = message.text, fontSize = 56.sp, modifier = Modifier.padding(4.dp))
+        }
+        return
+    }
+
+    val bubbleColor = if (isOwn) WaBubbleOutgoing else WaBubbleIncoming
 
     Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
         Box(
