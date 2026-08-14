@@ -300,6 +300,7 @@ private fun MessageBubble(message: Message, isOwn: Boolean) {
                         durationMs = message.audioDurationMs
                     )
                     MessageType.TEXT -> Text(text = message.text)
+                    MessageType.STICKER -> Unit // handled by the early return above
                 }
                 Text(
                     text = formatTime(message.timestamp),
