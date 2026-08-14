@@ -2,6 +2,7 @@ package com.whatschat.app.ui.viewmodel
 
 import android.net.Uri
 import androidx.lifecycle.ViewModel
+import java.io.File
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.whatschat.app.data.model.Message
@@ -41,6 +42,14 @@ class ChatViewModel(
         val uid = currentUid ?: return
         viewModelScope.launch {
             chatRepository.sendImageMessage(chatId, uid, uri)
+        }
+    }
+
+    fun sendAudio(audioFile: File, durationMs: Long) {
+        val uid = currentUid ?: return
+        viewModelScope.launch {
+            chatRepository.sendAudioMessage(chatId, uid, audioFile, durationMs)
+            audioFile.delete()
         }
     }
 

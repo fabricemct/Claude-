@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
+import java.io.File
 import java.util.UUID
 
 class ChatRepository(
@@ -84,6 +85,21 @@ class ChatRepository(
             timestamp = System.currentTimeMillis()
         )
         saveMessage(chatId, senderId, message, previewText = "📷 Photo")
+    }
+
+    suspend fun sendAudioMessage(chatId: String, senderId: String, audioFile: File, durationMs: Long) {
+        val ref = storage.reference.child("chat_audio/$chatId/${UUID.randomUUID()}.wav")
+        ref.putFile(Uri.fromFile(audioFile)).await()
+        val downloadUrl = ref.downloadUrl.await().toString()
+        val message = Message(
+            messageId = UUID.randomUUID().toString(),
+            senderId = senderId,
+            audioUrl = downloadUrl,
+            audioDurationMs = durationMs,
+            type = MessageType.AUDIO,
+            timestamp = System.currentTimeMillis()
+        )
+        saveMessage(chatId, senderId, message, previewText = "🎤 Voice message")
     }
 
     private suspend fun saveMessage(chatId: String, senderId: String, message: Message, previewText: String) {

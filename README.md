@@ -12,6 +12,8 @@ backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging).
 - Image sharing in a conversation (uploaded to Firebase Storage)
 - Editable profile (name, status, photo)
 - 1:1 voice calls (WebRTC, signaled through Firestore — see "Voice calls" below)
+- Funny voice messages: record a message and send it pitched up ("Chipmunk"),
+  pitched down ("Deep voice"), or normal — see "Voice messages" below
 
 Not included yet: video calls, end-to-end encryption, group chats,
 status/stories, push notification delivery (the FCM token is stored per user,
@@ -37,6 +39,25 @@ candidates) between the two phones — no audio ever passes through Firebase.
 - Microphone access is requested at runtime the first time you start or
   answer a call.
 
+## Voice messages
+
+Tapping the mic icon in a conversation records a voice message; tapping it
+again stops recording and shows a picker for a "funny voice" effect
+(Normal / Chipmunk / Deep voice) before sending. Recording uses raw 16-bit
+PCM audio (`AudioRecord`), wrapped in a WAV file. The "funny voice" effect
+isn't real pitch-shifting DSP — it's the classic trick of writing a WAV
+header that claims a different sample rate than the audio was actually
+recorded at, which speeds up/slows down playback (and shifts the pitch with
+it) at zero processing cost.
+
+- Voice messages are uploaded as uncompressed WAV files, so they're larger
+  than a typical compressed voice note (roughly 170 KB per 10 seconds at the
+  default 44.1 kHz mono recording rate) — fine for testing, but worth
+  switching to a compressed format (e.g. re-encoding to AAC/Opus) before any
+  real usage to save Storage bandwidth.
+- Playback uses `MediaPlayer` streaming directly from the Storage download
+  URL.
+
 ## Project structure
 
 ```
@@ -44,15 +65,17 @@ app/src/main/java/com/whatschat/app/
 ├── MainActivity.kt              Compose entry point
 ├── WhatsChatApp.kt               Application class
 ├── data/
-│   ├── model/                    User, Chat, Message
-│   ├── repository/               AuthRepository, UserRepository, ChatRepository
+│   ├── model/                    User, Chat, Message, Call
+│   ├── repository/               AuthRepository, UserRepository, ChatRepository, CallRepository
+│   ├── webrtc/                   WebRtcClient (PeerConnection wrapper)
+│   ├── audio/                    VoiceRecorder, WavFile, VoiceEffect (voice message recording)
 │   └── service/                  FCM token sync service
 └── ui/
     ├── navigation/                Navigation Compose graph
     ├── theme/                     Material 3 theme
     ├── components/                Shared composables (Avatar)
-    ├── viewmodel/                 AuthViewModel, ChatListViewModel, ChatViewModel, ProfileViewModel
-    └── screens/                   auth/, chatlist/, chat/, profile/
+    ├── viewmodel/                 AuthViewModel, ChatListViewModel, ChatViewModel, ProfileViewModel, CallViewModel
+    └── screens/                   auth/, chatlist/, chat/, profile/, call/
 ```
 
 ## Firebase setup (required before the app can run)
@@ -126,6 +149,9 @@ service firebase.storage {
     match /chat_images/{chatId}/{fileName} {
       allow read, write: if request.auth != null;
     }
+    match /chat_audio/{chatId}/{fileName} {
+      allow read, write: if request.auth != null;
+    }
   }
 }
 ```
@@ -154,8 +180,8 @@ emulator or device (minSdk 24 / Android 7.0+).
   `lastMessageSenderId`. `chatId` is the two participant uids sorted and
   joined with `_`, so a conversation between the same two users always
   resolves to the same document.
-- `chats/{chatId}/messages/{messageId}`: `senderId`, `text` or `imageUrl`,
-  `type`, `timestamp`
+- `chats/{chatId}/messages/{messageId}`: `senderId`, `text`, `imageUrl`, or
+  `audioUrl`/`audioDurationMs`, `type` (`TEXT`/`IMAGE`/`AUDIO`), `timestamp`
 - `calls/{callId}`: `callerId`, `calleeId`, `status` (`RINGING` / `ACCEPTED` /
   `DECLINED` / `ENDED`), `offerSdp`, `answerSdp`, `createdAt`
 - `calls/{callId}/callerCandidates` and `.../calleeCandidates`: trickled ICE
