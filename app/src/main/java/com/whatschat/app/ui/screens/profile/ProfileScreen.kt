@@ -43,6 +43,7 @@ fun ProfileScreen(
 ) {
     val user by viewModel.user.collectAsState()
     val saving by viewModel.saving.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
 
     var name by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("") }
@@ -53,6 +54,12 @@ fun ProfileScreen(
             name = it.name
             status = it.status
         }
+    }
+
+    // Once Firestore reports a new photoUrl, the pending local photo was
+    // uploaded and persisted, so stop overriding the avatar with the picker URI.
+    LaunchedEffect(user?.photoUrl) {
+        pendingPhotoUri = null
     }
 
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -108,6 +115,14 @@ fun ProfileScreen(
                     .fillMaxWidth()
                     .padding(top = 12.dp)
             )
+
+            if (errorMessage != null) {
+                Text(
+                    text = errorMessage.orEmpty(),
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 16.dp)
+                )
+            }
 
             Button(
                 onClick = { viewModel.saveProfile(name, status, pendingPhotoUri) },

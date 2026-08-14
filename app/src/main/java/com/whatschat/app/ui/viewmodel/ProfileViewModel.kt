@@ -22,6 +22,9 @@ class ProfileViewModel(
     private val _saving = MutableStateFlow(false)
     val saving: StateFlow<Boolean> = _saving.asStateFlow()
 
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
     init {
         val uid = authRepository.currentUser?.uid
         if (uid != null) {
@@ -35,9 +38,15 @@ class ProfileViewModel(
         val uid = authRepository.currentUser?.uid ?: return
         viewModelScope.launch {
             _saving.value = true
-            userRepository.updateProfile(uid, name, status, photoUri)
+            _errorMessage.value = null
+            val result = userRepository.updateProfile(uid, name, status, photoUri)
+            result.onFailure { _errorMessage.value = it.message ?: "Failed to save profile." }
             _saving.value = false
         }
+    }
+
+    fun dismissError() {
+        _errorMessage.value = null
     }
 
     fun signOut() = authRepository.signOut()
