@@ -29,8 +29,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.whatschat.app.R
 import com.whatschat.app.ui.components.Avatar
 import com.whatschat.app.ui.viewmodel.ProfileViewModel
 
@@ -69,10 +71,10 @@ fun ProfileScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Profile") },
+                title = { Text(stringResource(R.string.profile_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 }
             )
@@ -93,7 +95,7 @@ fun ProfileScreen(
                 modifier = Modifier.clickable { imagePicker.launch("image/*") }
             )
             Text(
-                text = "Tap to change photo",
+                text = stringResource(R.string.profile_tap_photo),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 8.dp)
             )
@@ -101,7 +103,7 @@ fun ProfileScreen(
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Name") },
+                label = { Text(stringResource(R.string.label_name)) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 24.dp)
@@ -110,7 +112,7 @@ fun ProfileScreen(
             OutlinedTextField(
                 value = status,
                 onValueChange = { status = it },
-                label = { Text("Status") },
+                label = { Text(stringResource(R.string.label_status)) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 12.dp)
@@ -131,7 +133,7 @@ fun ProfileScreen(
                     .fillMaxWidth()
                     .padding(top = 24.dp)
             ) {
-                Text(if (saving) "Saving..." else "Save")
+                Text(stringResource(if (saving) R.string.action_saving else R.string.action_save))
             }
 
             OutlinedButton(
@@ -143,7 +145,7 @@ fun ProfileScreen(
                     .fillMaxWidth()
                     .padding(top = 12.dp)
             ) {
-                Text("Log out")
+                Text(stringResource(R.string.action_log_out))
             }
         }
     }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -22,9 +23,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.whatschat.app.R
 import com.whatschat.app.data.model.Chat
 import com.whatschat.app.data.model.User
 import com.whatschat.app.ui.components.Avatar
@@ -39,6 +42,7 @@ import java.util.Locale
 fun ChatListScreen(
     onOpenChat: (chatId: String, otherUserName: String, otherUserPhoto: String) -> Unit,
     onOpenProfile: () -> Unit,
+    onOpenSettings: () -> Unit,
     viewModel: ChatListViewModel = viewModel()
 ) {
     val chats by viewModel.chats.collectAsState()
@@ -53,10 +57,13 @@ fun ChatListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("WhatsChat") },
+                title = { Text(stringResource(R.string.app_name)) },
                 actions = {
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings))
+                    }
                     IconButton(onClick = onOpenProfile) {
-                        Icon(Icons.Filled.Person, contentDescription = "Profile")
+                        Icon(Icons.Filled.Person, contentDescription = stringResource(R.string.cd_profile))
                     }
                 }
             )
@@ -64,7 +71,7 @@ fun ChatListScreen(
     ) { padding ->
         if (chats.isEmpty() && contactsWithoutChat.isEmpty()) {
             Column(modifier = Modifier.padding(padding).padding(24.dp)) {
-                Text("No contacts yet. Once someone else signs up, they'll appear here.")
+                Text(stringResource(R.string.chatlist_empty))
             }
         } else {
             LazyColumn(
@@ -73,7 +80,7 @@ fun ChatListScreen(
                     .padding(padding)
             ) {
                 if (chats.isNotEmpty()) {
-                    item(key = "chats_header") { SectionHeader("Chats") }
+                    item(key = "chats_header") { SectionHeader(stringResource(R.string.section_chats)) }
                     items(chats, key = { "chat_${it.chatId}" }) { chat ->
                         ChatRow(chat = chat, onClick = {
                             val user = chat.otherUser
@@ -82,7 +89,7 @@ fun ChatListScreen(
                     }
                 }
                 if (contactsWithoutChat.isNotEmpty()) {
-                    item(key = "contacts_header") { SectionHeader("Contacts") }
+                    item(key = "contacts_header") { SectionHeader(stringResource(R.string.section_contacts)) }
                     items(contactsWithoutChat, key = { "contact_${it.uid}" }) { user ->
                         ContactRow(user = user, onClick = {
                             scope.launch {

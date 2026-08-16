@@ -21,10 +21,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.whatschat.app.R
 import com.whatschat.app.ui.viewmodel.AuthUiState
 import com.whatschat.app.ui.viewmodel.AuthViewModel
 
@@ -49,15 +51,15 @@ fun LoginScreen(
             .padding(24.dp),
         verticalArrangement = Arrangement.Center
     ) {
-        Text(text = "WhatsChat", style = MaterialTheme.typography.titleLarge)
-        Text(text = "Log in to continue", style = MaterialTheme.typography.bodyLarge)
+        Text(text = stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge)
+        Text(text = stringResource(R.string.login_subtitle), style = MaterialTheme.typography.bodyLarge)
 
         androidx.compose.foundation.layout.Spacer(modifier = Modifier.padding(top = 24.dp))
 
         OutlinedTextField(
             value = email,
             onValueChange = { email = it },
-            label = { Text("Email") },
+            label = { Text(stringResource(R.string.label_email)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
             modifier = Modifier.fillMaxWidth()
         )
@@ -67,7 +69,7 @@ fun LoginScreen(
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
-            label = { Text("Password") },
+            label = { Text(stringResource(R.string.label_password)) },
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier.fillMaxWidth()
@@ -91,7 +93,7 @@ fun LoginScreen(
             if (uiState is AuthUiState.Loading) {
                 CircularProgressIndicator(modifier = Modifier.padding(2.dp), color = MaterialTheme.colorScheme.onPrimary)
             } else {
-                Text("Log in")
+                Text(stringResource(R.string.action_log_in))
             }
         }
 
@@ -101,7 +103,7 @@ fun LoginScreen(
                 .fillMaxWidth()
                 .padding(top = 8.dp)
         ) {
-            Text("Don't have an account? Sign up", textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text(stringResource(R.string.login_no_account), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
     }
 }

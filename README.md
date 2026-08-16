@@ -17,8 +17,10 @@ backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging).
 - 1:1 voice and video calls (WebRTC, signaled through Firestore — see "Voice
   & video calls" below), with an incoming-call prompt that shows up no
   matter which screen you're on, not just the chat list
-- Funny voice messages: record a message and send it as Woman / Man / Baby /
-  Giant / Robot / Alien / Tired / Laughing — see "Voice messages" below
+- Voice messages send the instant you stop recording — pick a fun voice
+  (Woman / Man / Baby / Giant / Robot / Alien / Tired / Laughing) ahead of
+  time if you want one, otherwise it's sent as a plain recording — see
+  "Voice messages" below
 - Emoji picker and a set of large "stickers" (see "Emoji & stickers" below)
 - "Typing..." indicator, shown while the other participant is composing a message
 - Selfie filters (14 presets: 10 emoji overlays with a live viewfinder
@@ -32,6 +34,8 @@ backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging).
 - Calls ring even when the app isn't open on screen, via a background
   listener service with a full-screen incoming-call notification — see
   "Background call ringing" below
+- A Settings screen (gear icon on the chat list) to switch the app's own
+  display language — see "App language setting" below
 
 Not included yet: end-to-end encryption, group chats, status/stories, push
 notification delivery for new *messages* (the FCM token is stored per user,
@@ -74,14 +78,25 @@ second "answer" step once you're in `CallScreen`.
 - Video capture uses `Camera2Enumerator`/`CameraVideoCapturer` from the
   WebRTC SDK directly (front camera by default) at 1280x720@30fps — no
   CameraX involved in the call path.
+- Video is encoded/decoded in software (`SoftwareVideoEncoderFactory`/
+  `SoftwareVideoDecoderFactory`) rather than using hardware acceleration —
+  hardware codec support varies a lot across Android chipsets, and a
+  hardware codec failing silently to initialize is a well-known way to end
+  up with a call that has audio but never shows any video, with no error
+  surfaced. Software VP8 works identically on every device at the cost of
+  more CPU/battery, a good trade for a small 1:1 call. `WebRtcClient.kt`
+  also now logs camera/ICE/SDP events (`Log.d`/`Log.w`, tag `WebRtcClient`)
+  so a future issue can actually be diagnosed from Logcat.
 
 ## Voice messages
 
 Tapping the mic icon in a conversation records a voice message; tapping it
-again stops recording and shows a picker for a "funny voice" effect before
-sending: **Normal, Woman, Man, Baby, Giant, Robot, Alien, Tired, Laughing**.
-None of these model or imitate any real person — they're generic playback-rate
-presets (see `VoiceEffect.kt`).
+again stops recording and sends it immediately — no extra dialog in the way.
+The theater-masks icon next to the mic lets you pick a "funny voice" effect
+ahead of time for your *next* recording (**Normal, Woman, Man, Baby, Giant,
+Robot, Alien, Tired, Laughing**, defaulting to Normal); it stays selected
+until you change it again. None of these model or imitate any real person —
+they're generic playback-rate presets (see `VoiceEffect.kt`).
 
 Recording uses raw 16-bit PCM audio (`AudioRecord`). Before sending,
 `PcmResampler` walks through the recorded samples at a rate driven by the
@@ -225,6 +240,15 @@ same "any call for me?" Firestore listener alive independent of which screen
   `MainActivity.incomingCallIntent`); **Decline** updates the call's
   Firestore status without needing to open the app at all.
 
+The service declares itself as `foregroundServiceType="specialUse"` (Android
+14's generic long-running-task category), not `"phoneCall"` — the latter
+carries stricter OS assumptions (Telecom/`ConnectionService` integration)
+this app doesn't implement, which was found to make the foreground service
+fail to start on some devices with no visible error, so the app just never
+rang in the background. `CallListenerService.start()`/`onCreate()` also now
+log a warning (tag `CallListenerService`) if starting still fails, so a
+remaining issue can be diagnosed from Logcat instead of guessed at blind.
+
 Limits worth knowing:
 
 - This is a real Android foreground service, not a push notification — it
@@ -252,6 +276,33 @@ for both participants — there's no "delete for me only" option and no undo.
 Deleting the most recent message in a chat recomputes the chat list's
 preview from what's now the latest remaining message (or clears it if the
 chat is now empty).
+
+## App language setting
+
+The gear icon on the chat list (next to the profile icon) opens Settings,
+where you can pick the app's own display language — English, French, or
+"follow the phone's language" — independent of the per-message translation
+feature above. It uses Android's official per-app language API
+(`AppCompatDelegate.setApplicationLocales`, via `SettingsScreen.kt` and
+`AppUiLanguage.kt`), which remembers your choice by itself (no extra storage
+code needed) and re-applies it on every future launch, and swaps in
+`res/values-fr/strings.xml` for the French UI text.
+
+- Picking a language recreates the current screen to apply it, which can
+  land you back on the chat list — that's normal, not a bug.
+- On Android 13+ this takes effect immediately, anywhere in the app. On
+  older versions it can need a full close-and-reopen (swipe the app away
+  and relaunch it) to fully apply everywhere, since the automatic backport
+  for older Android versions expects an `AppCompatActivity` and this app's
+  `MainActivity` deliberately stays a plain Compose `ComponentActivity` (a
+  bigger, riskier change to the app's theme/activity setup than was worth
+  making for this).
+- Only the most common, always-visible screens (login/register, chat list,
+  profile, settings) have been translated into French so far — deeper
+  screens (selfie filters, the translate dialogs, call screens) still show
+  their original English strings for now. Extending `strings.xml` /
+  `values-fr/strings.xml` with more keys is straightforward, just
+  time-consuming to do exhaustively.
 
 ## Typing indicator
 

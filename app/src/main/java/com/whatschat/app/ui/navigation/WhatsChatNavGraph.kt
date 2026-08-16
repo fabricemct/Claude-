@@ -33,6 +33,7 @@ import com.whatschat.app.ui.screens.chat.ChatScreen
 import com.whatschat.app.ui.screens.chatlist.ChatListScreen
 import com.whatschat.app.ui.screens.filter.SelfieFilterScreen
 import com.whatschat.app.ui.screens.profile.ProfileScreen
+import com.whatschat.app.ui.screens.settings.SettingsScreen
 import kotlinx.coroutines.launch
 
 /** Deep-links straight to an already-ringing call, e.g. from the incoming-call notification's Accept action. */
@@ -49,6 +50,7 @@ private object Routes {
     const val REGISTER = "register"
     const val CHAT_LIST = "chatList"
     const val PROFILE = "profile"
+    const val SETTINGS = "settings"
     const val CHAT = "chat/{chatId}?name={name}&photo={photo}"
     const val CALL = "call/{otherUid}?name={name}&photo={photo}&callId={callId}&isVideo={isVideo}"
     const val FILTERS = "filters/{chatId}"
@@ -186,8 +188,13 @@ fun WhatsChatNavGraph(
                 onOpenChat = { chatId, name, photo ->
                     navController.navigate(Routes.chat(chatId, name, photo))
                 },
-                onOpenProfile = { navController.navigate(Routes.PROFILE) }
+                onOpenProfile = { navController.navigate(Routes.PROFILE) },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) }
             )
+        }
+
+        composable(Routes.SETTINGS) {
+            SettingsScreen(onBack = { navController.popBackStack() })
         }
 
         composable(
