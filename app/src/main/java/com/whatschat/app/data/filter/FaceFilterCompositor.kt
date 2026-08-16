@@ -18,15 +18,24 @@ object FaceFilterCompositor {
 
     fun apply(source: Bitmap, face: Face, filter: FaceFilter): Bitmap {
         if (filter == FaceFilter.NONE) return source
+        val (centerX, centerY, textSize) = placementFor(filter, face, face.boundingBox)
+        return drawEmoji(source, filter.emoji, centerX, centerY, textSize)
+    }
 
+    /** Draws [filter] at an explicit position (e.g. one the user dragged into place) instead of an auto-detected one. */
+    fun applyAt(source: Bitmap, filter: FaceFilter, centerX: Float, centerY: Float, textSize: Float): Bitmap {
+        if (filter == FaceFilter.NONE) return source
+        return drawEmoji(source, filter.emoji, centerX, centerY, textSize)
+    }
+
+    private fun drawEmoji(source: Bitmap, emoji: String, centerX: Float, centerY: Float, textSize: Float): Bitmap {
         val result = source.copy(Bitmap.Config.ARGB_8888, true)
         val canvas = Canvas(result)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
-        val box = face.boundingBox
-
-        val (centerX, centerY, textSize) = placementFor(filter, face, box)
-        paint.textSize = textSize
-        canvas.drawText(filter.emoji, centerX, centerY + textSize * 0.3f, paint)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+            this.textSize = textSize
+        }
+        canvas.drawText(emoji, centerX, centerY + textSize * 0.3f, paint)
         return result
     }
 

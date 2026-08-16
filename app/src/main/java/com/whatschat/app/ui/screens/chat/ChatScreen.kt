@@ -318,29 +318,33 @@ fun ChatScreen(
                         TooltipIconButton(
                             icon = Icons.Filled.EmojiEmotions,
                             description = "Emoji",
-                            onClick = { showEmojiPicker = true }
+                            onClick = { showEmojiPicker = true },
+                            tint = Color(0xFFFFC107)
                         )
                         TooltipIconButton(
                             icon = Icons.Filled.Star,
                             description = "Stickers",
-                            onClick = { showStickerPicker = true }
+                            onClick = { showStickerPicker = true },
+                            tint = Color(0xFFFF9800)
                         )
                         TooltipIconButton(
                             icon = Icons.Filled.Image,
                             description = "Send a photo",
-                            onClick = { imagePicker.launch("image/*") }
+                            onClick = { imagePicker.launch("image/*") },
+                            tint = Color(0xFF2196F3)
                         )
                         TooltipIconButton(
                             icon = Icons.Filled.Translate,
                             description = "Translate & send as voice",
                             onClick = { showTranslatePicker = true },
-                            enabled = text.isNotBlank()
+                            enabled = text.isNotBlank(),
+                            tint = Color(0xFF4CAF50)
                         )
                         TooltipIconButton(
                             icon = Icons.Filled.Mic,
                             description = if (isRecording) "Stop recording" else "Record a voice message",
                             onClick = { toggleRecording() },
-                            tint = if (isRecording) Color(0xFFE53935) else LocalContentColor.current
+                            tint = if (isRecording) Color(0xFFE53935) else Color(0xFF9C27B0)
                         )
                     }
                 }

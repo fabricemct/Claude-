@@ -104,25 +104,29 @@ result is wrapped in a WAV file and uploaded.
 The face icon in a conversation opens the front camera. Pick a filter — Dog,
 Cat, Clown, Alien, Party, Glasses, Heart Eyes, Disguise, Crown, Santa (emoji
 standing in for custom artwork) — and a live approximate preview tracks your
-face in the viewfinder so you can see roughly how it'll look. Take the photo
-and the filter is re-drawn precisely at that point, positioned/scaled from
-[ML Kit](https://developers.google.com/ml-kit)'s detected face bounding box
-and landmarks (eyes for Glasses/Heart Eyes, nose for Disguise, etc. — see
-`FilterAnchor` in `FaceFilter.kt`), then you can retake or send it as a
-normal image message.
+face in the viewfinder. **Drag the emoji** with your finger any time to
+override the auto-tracked spot with an exact position of your choosing; take
+the photo and it's composited at that same spot. If you never drag it, the
+filter is auto-positioned from [ML Kit](https://developers.google.com/ml-kit)'s
+detected face bounding box and landmarks (eyes for Glasses/Heart Eyes, nose
+for Disguise, etc. — see `FilterAnchor` in `FaceFilter.kt`), re-detected on
+the still photo for precision. Either way you can retake or send the result
+as a normal image message.
 
-- Two different code paths, on purpose: the **live viewfinder preview** uses
-  `ImageAnalysis` to detect a face on the streaming camera frames and draws
-  the filter mirrored/scaled to match, which is inherently approximate —
-  getting per-frame camera rotation and front-camera mirroring exactly right
-  on every device without being able to test on real hardware is genuinely
-  hard, so treat it as a rough guide rather than a pixel-perfect AR overlay.
+- Auto-tracking (no drag) uses two different code paths on purpose: the
+  **live viewfinder preview** uses `ImageAnalysis` on the streaming camera
+  frames, which is inherently approximate — getting per-frame camera
+  rotation and front-camera mirroring exactly right on every device without
+  testing on real hardware is genuinely hard, so treat it as a rough guide.
   The **final sent photo** re-runs detection on the still image itself (no
-  rotation/mirroring ambiguity there) and composites precisely — this path
-  is what actually gets sent, so a live-preview misalignment never affects
-  the result.
-- If no face is detected at capture time, the filter is skipped and the
-  plain photo is offered instead of failing.
+  rotation/mirroring ambiguity there) and composites precisely, so a
+  live-preview misalignment never affects an auto-positioned result.
+- Once you **drag** the filter, that exact screen position is what gets
+  used for the sent photo too (converted from preview to photo pixel space)
+  — no re-detection involved, so it's exactly where you left it, not an
+  approximation. Picking a different filter resets back to auto-tracking.
+- If no face is detected at capture time and the filter was never dragged,
+  the filter is skipped and the plain photo is offered instead of failing.
 - Camera capture uses CameraX (`Preview` + `ImageCapture` + `ImageAnalysis`,
   front camera); detection uses ML Kit's bundled (on-device, no network)
   face detector, with a faster/lower-accuracy mode for the live stream and a
