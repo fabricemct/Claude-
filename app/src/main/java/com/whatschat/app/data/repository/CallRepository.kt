@@ -21,13 +21,14 @@ class CallRepository(
 ) {
     private val callsCollection = firestore.collection("calls")
 
-    suspend fun createCall(callerId: String, calleeId: String): String {
+    suspend fun createCall(callerId: String, calleeId: String, isVideo: Boolean = false): String {
         val callId = UUID.randomUUID().toString()
         val call = Call(
             callId = callId,
             callerId = callerId,
             calleeId = calleeId,
             status = CallStatus.RINGING.name,
+            isVideo = isVideo,
             createdAt = System.currentTimeMillis()
         )
         callsCollection.document(callId).set(call).await()

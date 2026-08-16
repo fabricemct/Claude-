@@ -9,5 +9,6 @@ data class Call(
     val status: String = CallStatus.RINGING.name,
     val offerSdp: String = "",
     val answerSdp: String = "",
+    val isVideo: Boolean = false,
     val createdAt: Long = 0L
 )

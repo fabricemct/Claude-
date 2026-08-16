@@ -44,7 +44,7 @@ import java.util.Locale
 fun ChatListScreen(
     onOpenChat: (chatId: String, otherUserName: String, otherUserPhoto: String) -> Unit,
     onOpenProfile: () -> Unit,
-    onAcceptCall: (callId: String, callerId: String, callerName: String, callerPhoto: String) -> Unit,
+    onAcceptCall: (callId: String, callerId: String, callerName: String, callerPhoto: String, isVideo: Boolean) -> Unit,
     viewModel: ChatListViewModel = viewModel()
 ) {
     val chats by viewModel.chats.collectAsState()
@@ -64,13 +64,13 @@ fun ChatListScreen(
     if (incomingCall != null) {
         AlertDialog(
             onDismissRequest = { },
-            title = { Text("Incoming call") },
+            title = { Text(if (incomingCall?.isVideo == true) "Incoming video call" else "Incoming call") },
             text = { Text(callerName.ifBlank { "Someone" } + " is calling you") },
             confirmButton = {
                 TextButton(onClick = {
                     val call = incomingCall ?: return@TextButton
                     viewModel.dismissIncomingCall()
-                    onAcceptCall(call.callId, call.callerId, callerName.ifBlank { "Unknown" }, callerPhoto)
+                    onAcceptCall(call.callId, call.callerId, callerName.ifBlank { "Unknown" }, callerPhoto, call.isVideo)
                 }) { Text("Accept") }
             },
             dismissButton = {

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -84,7 +85,7 @@ fun ChatScreen(
     otherUserName: String,
     otherUserPhoto: String,
     onBack: () -> Unit,
-    onStartCall: (otherUid: String, otherUserName: String, otherUserPhoto: String) -> Unit,
+    onStartCall: (otherUid: String, otherUserName: String, otherUserPhoto: String, isVideo: Boolean) -> Unit,
     viewModel: ChatViewModel = viewModel(factory = ChatViewModel.Factory(chatId))
 ) {
     val messages by viewModel.messages.collectAsState()
@@ -206,10 +207,16 @@ fun ChatScreen(
                 },
                 actions = {
                     IconButton(
-                        onClick = { onStartCall(otherUid, otherUserName, otherUserPhoto) },
+                        onClick = { onStartCall(otherUid, otherUserName, otherUserPhoto, false) },
                         enabled = otherUid.isNotBlank()
                     ) {
                         Icon(Icons.Filled.Call, contentDescription = "Voice call")
+                    }
+                    IconButton(
+                        onClick = { onStartCall(otherUid, otherUserName, otherUserPhoto, true) },
+                        enabled = otherUid.isNotBlank()
+                    ) {
+                        Icon(Icons.Filled.Videocam, contentDescription = "Video call")
                     }
                 }
             )

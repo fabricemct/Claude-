@@ -13,22 +13,31 @@ backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging).
 - Real-time text messaging
 - Image sharing in a conversation (uploaded to Firebase Storage)
 - Editable profile (name, status, photo)
-- 1:1 voice calls (WebRTC, signaled through Firestore — see "Voice calls" below)
+- 1:1 voice and video calls (WebRTC, signaled through Firestore — see "Voice
+  & video calls" below)
 - Funny voice messages: record a message and send it as Woman / Man / Baby /
   Giant / Robot / Alien / Tired / Laughing — see "Voice messages" below
 - Emoji picker and a set of large "stickers" (see "Emoji & stickers" below)
 - "Typing..." indicator, shown while the other participant is composing a message
 
-Not included yet: video calls, end-to-end encryption, group chats,
-status/stories, push notification delivery (the FCM token is stored per user,
-but no Cloud Function sends notifications yet).
+Not included yet: end-to-end encryption, group chats, status/stories, push
+notification delivery (the FCM token is stored per user, but no Cloud
+Function sends notifications yet).
 
-## Voice calls
+## Voice & video calls
 
-Tapping the phone icon in a conversation starts a 1:1 audio call using
-[WebRTC](https://webrtc.org/) for the actual audio stream. Firestore is only
-used to exchange the connection setup data (SDP offer/answer and ICE
-candidates) between the two phones — no audio ever passes through Firebase.
+The chat header has two call buttons: phone (audio-only) and camera (video).
+Both use [WebRTC](https://webrtc.org/) for the actual media stream; Firestore
+only exchanges the connection setup data (SDP offer/answer and trickled ICE
+candidates) between the two phones — no audio/video ever passes through
+Firebase. A call's `isVideo` flag is decided upfront by whichever button was
+tapped (caller) or by the incoming call doc (callee), since it determines
+whether the camera is opened at all before the connection exists.
+
+Video call UI: the remote video fills the screen (or the contact's avatar
+while the connection is still being established), with a small local preview
+in the top-right corner. Controls: mute, camera on/off, front/back camera
+switch, hang up.
 
 - A call only rings while the recipient has the app open on the chat list
   screen; there's no background/lock-screen ringing yet (that would require a
@@ -40,8 +49,11 @@ candidates) between the two phones — no audio ever passes through Firebase.
 - The `calls` Firestore documents aren't automatically cleaned up after a
   call ends — fine for testing, but worth adding a scheduled cleanup (or a
   Cloud Function) before any real usage.
-- Microphone access is requested at runtime the first time you start or
-  answer a call.
+- Microphone access (and camera access, for video calls) is requested at
+  runtime the first time you start or answer a call.
+- Video capture uses `Camera2Enumerator`/`CameraVideoCapturer` from the
+  WebRTC SDK directly (front camera by default) at 1280x720@30fps — no
+  CameraX involved in the call path.
 
 ## Voice messages
 
@@ -215,7 +227,7 @@ emulator or device (minSdk 24 / Android 7.0+).
   stickers — the emoji character), `imageUrl`, or `audioUrl`/`audioDurationMs`,
   `type` (`TEXT`/`IMAGE`/`AUDIO`/`STICKER`), `timestamp`
 - `calls/{callId}`: `callerId`, `calleeId`, `status` (`RINGING` / `ACCEPTED` /
-  `DECLINED` / `ENDED`), `offerSdp`, `answerSdp`, `createdAt`
+  `DECLINED` / `ENDED`), `offerSdp`, `answerSdp`, `isVideo`, `createdAt`
 - `calls/{callId}/callerCandidates` and `.../calleeCandidates`: trickled ICE
   candidates (`sdpMid`, `sdpMLineIndex`, `candidate`)
 
@@ -224,7 +236,6 @@ emulator or device (minSdk 24 / Android 7.0+).
 - Group chats (extend `participants` beyond 2, adjust the chat id scheme)
 - Push notifications via a Cloud Function triggered on new messages
 - End-to-end encryption
-- Video calls (the WebRTC plumbing already supports adding a video track)
-- A TURN server for voice calls on restrictive networks, and a foreground
-  service so calls can ring outside the app
-- Message delivery/read receipts, typing indicators
+- A TURN server for calls on restrictive networks, and a foreground service
+  so calls can ring outside the app
+- Message delivery/read receipts

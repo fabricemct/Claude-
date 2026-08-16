@@ -14,19 +14,25 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.webrtc.EglBase
 import org.webrtc.SessionDescription
+import org.webrtc.VideoTrack
 
 enum class CallPhase { CONNECTING, RINGING, CONNECTED, ENDED }
 
 /**
- * Drives a single 1:1 voice call. When [existingCallId] is null this device
- * is the caller (it creates the call doc and sends the offer); otherwise
- * it's the callee answering an incoming call that a caller already created.
+ * Drives a single 1:1 call (audio, optionally video). When [existingCallId]
+ * is null this device is the caller (it creates the call doc and sends the
+ * offer); otherwise it's the callee answering an incoming call that a caller
+ * already created. [isVideoCall] must be known upfront by both sides (the
+ * caller from which button they tapped, the callee from the incoming call's
+ * `isVideo` field) since it decides whether the camera is opened at all.
  */
 class CallViewModel(
     application: Application,
     private val otherUid: String,
     private val existingCallId: String?,
+    val isVideoCall: Boolean,
     private val authRepository: AuthRepository = AuthRepository(),
     private val callRepository: CallRepository = CallRepository()
 ) : AndroidViewModel(application) {
@@ -42,6 +48,12 @@ class CallViewModel(
     private val _muted = MutableStateFlow(false)
     val muted: StateFlow<Boolean> = _muted.asStateFlow()
 
+    private val _videoEnabled = MutableStateFlow(isVideoCall)
+    val videoEnabled: StateFlow<Boolean> = _videoEnabled.asStateFlow()
+
+    private val _remoteVideoTrack = MutableStateFlow<VideoTrack?>(null)
+    val remoteVideoTrack: StateFlow<VideoTrack?> = _remoteVideoTrack.asStateFlow()
+
     private val _call = MutableStateFlow<Call?>(null)
     val call: StateFlow<Call?> = _call.asStateFlow()
 
@@ -50,6 +62,7 @@ class CallViewModel(
 
     private val webRtcClient = WebRtcClient(
         application,
+        isVideoCall,
         object : WebRtcClient.Listener {
             override fun onLocalIceCandidate(candidate: org.webrtc.IceCandidate) {
                 val id = callId ?: return
@@ -63,14 +76,21 @@ class CallViewModel(
             override fun onDisconnected() {
                 if (_phase.value != CallPhase.ENDED) _phase.value = CallPhase.ENDED
             }
+
+            override fun onRemoteVideoTrack(track: VideoTrack) {
+                _remoteVideoTrack.value = track
+            }
         }
     )
+
+    val eglBaseContext: EglBase.Context get() = webRtcClient.eglBase.eglBaseContext
+    val localVideoTrack: VideoTrack? get() = webRtcClient.localVideoTrack
 
     init {
         webRtcClient.createPeerConnection()
         if (isCaller) {
             viewModelScope.launch {
-                val id = callRepository.createCall(myUid, otherUid)
+                val id = callRepository.createCall(myUid, otherUid, isVideoCall)
                 callId = id
                 observeCall(id)
                 observeRemoteCandidates(id)
@@ -138,6 +158,17 @@ class CallViewModel(
         _muted.value = newMuted
     }
 
+    fun toggleVideo() {
+        if (!isVideoCall) return
+        val newEnabled = !_videoEnabled.value
+        webRtcClient.setVideoEnabled(newEnabled)
+        _videoEnabled.value = newEnabled
+    }
+
+    fun switchCamera() {
+        webRtcClient.switchCamera()
+    }
+
     fun hangUp() {
         val id = callId
         if (id != null) {
@@ -154,10 +185,11 @@ class CallViewModel(
     class Factory(
         private val application: Application,
         private val otherUid: String,
-        private val existingCallId: String?
+        private val existingCallId: String?,
+        private val isVideoCall: Boolean
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            CallViewModel(application, otherUid, existingCallId) as T
+            CallViewModel(application, otherUid, existingCallId, isVideoCall) as T
     }
 }

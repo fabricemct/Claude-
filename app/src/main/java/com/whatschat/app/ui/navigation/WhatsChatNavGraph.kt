@@ -22,13 +22,13 @@ private object Routes {
     const val CHAT_LIST = "chatList"
     const val PROFILE = "profile"
     const val CHAT = "chat/{chatId}?name={name}&photo={photo}"
-    const val CALL = "call/{otherUid}?name={name}&photo={photo}&callId={callId}"
+    const val CALL = "call/{otherUid}?name={name}&photo={photo}&callId={callId}&isVideo={isVideo}"
 
     fun chat(chatId: String, name: String, photo: String) =
         "chat/$chatId?name=${Uri.encode(name)}&photo=${Uri.encode(photo)}"
 
-    fun call(otherUid: String, name: String, photo: String, callId: String = "") =
-        "call/$otherUid?name=${Uri.encode(name)}&photo=${Uri.encode(photo)}&callId=${Uri.encode(callId)}"
+    fun call(otherUid: String, name: String, photo: String, callId: String = "", isVideo: Boolean = false) =
+        "call/$otherUid?name=${Uri.encode(name)}&photo=${Uri.encode(photo)}&callId=${Uri.encode(callId)}&isVideo=$isVideo"
 }
 
 @Composable
@@ -64,8 +64,8 @@ fun WhatsChatNavGraph(navController: NavHostController = rememberNavController()
                     navController.navigate(Routes.chat(chatId, name, photo))
                 },
                 onOpenProfile = { navController.navigate(Routes.PROFILE) },
-                onAcceptCall = { callId, callerId, callerName, callerPhoto ->
-                    navController.navigate(Routes.call(callerId, callerName, callerPhoto, callId))
+                onAcceptCall = { callId, callerId, callerName, callerPhoto, isVideo ->
+                    navController.navigate(Routes.call(callerId, callerName, callerPhoto, callId, isVideo))
                 }
             )
         }
@@ -86,8 +86,8 @@ fun WhatsChatNavGraph(navController: NavHostController = rememberNavController()
                 otherUserName = name,
                 otherUserPhoto = photo,
                 onBack = { navController.popBackStack() },
-                onStartCall = { otherUid, otherName, otherPhoto ->
-                    navController.navigate(Routes.call(otherUid, otherName, otherPhoto))
+                onStartCall = { otherUid, otherName, otherPhoto, isVideo ->
+                    navController.navigate(Routes.call(otherUid, otherName, otherPhoto, isVideo = isVideo))
                 }
             )
         }
@@ -98,18 +98,21 @@ fun WhatsChatNavGraph(navController: NavHostController = rememberNavController()
                 navArgument("otherUid") { type = NavType.StringType },
                 navArgument("name") { type = NavType.StringType; defaultValue = "" },
                 navArgument("photo") { type = NavType.StringType; defaultValue = "" },
-                navArgument("callId") { type = NavType.StringType; defaultValue = "" }
+                navArgument("callId") { type = NavType.StringType; defaultValue = "" },
+                navArgument("isVideo") { type = NavType.BoolType; defaultValue = false }
             )
         ) { backStackEntry ->
             val otherUid = backStackEntry.arguments?.getString("otherUid").orEmpty()
             val name = backStackEntry.arguments?.getString("name").orEmpty()
             val photo = backStackEntry.arguments?.getString("photo").orEmpty()
             val callId = backStackEntry.arguments?.getString("callId").orEmpty()
+            val isVideo = backStackEntry.arguments?.getBoolean("isVideo") ?: false
             CallScreen(
                 otherUid = otherUid,
                 otherUserName = name,
                 otherUserPhoto = photo,
                 existingCallId = callId.ifBlank { null },
+                isVideoCall = isVideo,
                 onCallEnded = { navController.popBackStack() }
             )
         }
