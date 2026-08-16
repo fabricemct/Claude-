@@ -63,12 +63,12 @@ class WebRtcClient(
 
     /** A camera-level failure here (as opposed to a signaling/SDP issue) previously failed totally silently. */
     private val cameraEventsLogger = object : CameraVideoCapturer.CameraEventsHandler {
-        override fun onCameraError(errorDescription: String) = Log.w(TAG, "Camera error: $errorDescription")
-        override fun onCameraDisconnected() = Log.w(TAG, "Camera disconnected")
-        override fun onCameraFreezed(errorDescription: String) = Log.w(TAG, "Camera freezed: $errorDescription")
-        override fun onCameraOpening(cameraName: String) = Log.d(TAG, "Camera opening: $cameraName")
-        override fun onFirstFrameAvailable() = Log.d(TAG, "Camera first frame available")
-        override fun onCameraClosed() = Log.d(TAG, "Camera closed")
+        override fun onCameraError(errorDescription: String) { Log.w(TAG, "Camera error: $errorDescription") }
+        override fun onCameraDisconnected() { Log.w(TAG, "Camera disconnected") }
+        override fun onCameraFreezed(errorDescription: String) { Log.w(TAG, "Camera freezed: $errorDescription") }
+        override fun onCameraOpening(cameraName: String) { Log.d(TAG, "Camera opening: $cameraName") }
+        override fun onFirstFrameAvailable() { Log.d(TAG, "Camera first frame available") }
+        override fun onCameraClosed() { Log.d(TAG, "Camera closed") }
     }
 
     init {
@@ -216,7 +216,7 @@ class WebRtcClient(
     private open class SdpObserverAdapter : SdpObserver {
         override fun onCreateSuccess(sdp: SessionDescription) = Unit
         override fun onSetSuccess() = Unit
-        override fun onCreateFailure(error: String) = Log.w(TAG, "SDP create failed: $error")
-        override fun onSetFailure(error: String) = Log.w(TAG, "SDP set failed: $error")
+        override fun onCreateFailure(error: String) { Log.w(TAG, "SDP create failed: $error") }
+        override fun onSetFailure(error: String) { Log.w(TAG, "SDP set failed: $error") }
     }
 }
