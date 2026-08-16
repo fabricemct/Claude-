@@ -91,6 +91,9 @@ dependencies {
     implementation("androidx.camera:camera-view:1.3.4")
     implementation("com.google.mlkit:face-detection:16.1.7")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+    // CameraX's ProcessCameraProvider.getInstance() returns a Guava ListenableFuture;
+    // not pulled in transitively, so it must be declared explicitly.
+    implementation("com.google.guava:guava:31.0.1-android")
 
     // Voice translation (translate a typed message, speak it, send as a voice note)
     implementation("com.google.mlkit:translate:17.0.3")
