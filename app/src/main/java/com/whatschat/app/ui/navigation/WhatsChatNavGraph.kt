@@ -2,6 +2,9 @@ package com.whatschat.app.ui.navigation
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -9,6 +12,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.google.firebase.auth.FirebaseAuth
+import com.whatschat.app.data.service.CallListenerService
 import com.whatschat.app.ui.screens.auth.LoginScreen
 import com.whatschat.app.ui.screens.auth.RegisterScreen
 import com.whatschat.app.ui.screens.call.CallScreen
@@ -16,6 +20,15 @@ import com.whatschat.app.ui.screens.chat.ChatScreen
 import com.whatschat.app.ui.screens.chatlist.ChatListScreen
 import com.whatschat.app.ui.screens.filter.SelfieFilterScreen
 import com.whatschat.app.ui.screens.profile.ProfileScreen
+
+/** Deep-links straight to an already-ringing call, e.g. from the incoming-call notification's Accept action. */
+data class PendingCallArgs(
+    val otherUid: String,
+    val name: String,
+    val photo: String,
+    val callId: String,
+    val isVideo: Boolean
+)
 
 private object Routes {
     const val LOGIN = "login"
@@ -36,8 +49,36 @@ private object Routes {
 }
 
 @Composable
-fun WhatsChatNavGraph(navController: NavHostController = rememberNavController()) {
+fun WhatsChatNavGraph(
+    navController: NavHostController = rememberNavController(),
+    pendingCall: PendingCallArgs? = null,
+    onPendingCallConsumed: () -> Unit = {}
+) {
     val startDestination = if (FirebaseAuth.getInstance().currentUser != null) Routes.CHAT_LIST else Routes.LOGIN
+    val context = LocalContext.current
+
+    // Keeps a foreground service listening for incoming calls whenever someone is
+    // signed in, so a call can ring even while the app isn't the one on screen.
+    DisposableEffect(Unit) {
+        val auth = FirebaseAuth.getInstance()
+        val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+            if (firebaseAuth.currentUser != null) {
+                CallListenerService.start(context)
+            } else {
+                CallListenerService.stop(context)
+            }
+        }
+        auth.addAuthStateListener(listener)
+        onDispose { auth.removeAuthStateListener(listener) }
+    }
+
+    LaunchedEffect(pendingCall) {
+        val call = pendingCall ?: return@LaunchedEffect
+        if (FirebaseAuth.getInstance().currentUser != null) {
+            navController.navigate(Routes.call(call.otherUid, call.name, call.photo, call.callId, call.isVideo))
+        }
+        onPendingCallConsumed()
+    }
 
     NavHost(navController = navController, startDestination = startDestination) {
         composable(Routes.LOGIN) {

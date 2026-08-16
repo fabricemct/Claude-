@@ -55,6 +55,7 @@ import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -88,6 +89,8 @@ import com.whatschat.app.ui.components.STICKER_EMOJIS
 import com.whatschat.app.ui.components.Avatar
 import com.whatschat.app.ui.theme.WaBubbleIncoming
 import com.whatschat.app.ui.theme.WaBubbleOutgoing
+import com.whatschat.app.ui.theme.WaBubbleText
+import com.whatschat.app.ui.theme.WaBubbleTimestamp
 import com.whatschat.app.ui.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
 import java.io.File
@@ -368,6 +371,7 @@ fun ChatScreen(
                         modifier = Modifier
                             .weight(1f)
                             .padding(horizontal = 4.dp),
+                        shape = RoundedCornerShape(24.dp),
                         placeholder = { Text(if (isRecording) "Recording... tap mic to stop" else "Message") }
                     )
                     TooltipIconButton(
@@ -450,29 +454,35 @@ private fun MessageBubble(message: Message, isOwn: Boolean, onLongPress: () -> U
                 .combinedClickable(onClick = {}, onLongClick = onLongPress)
                 .padding(8.dp)
         ) {
-            Column {
-                when (message.type) {
-                    MessageType.IMAGE -> AsyncImage(
-                        model = message.imageUrl,
-                        contentDescription = "Image message",
+            // Bubbles are always a light color by design, regardless of dark mode or
+            // dynamic (Material You) theming, so their text must stay a fixed dark
+            // color too — otherwise dark-theme's light text becomes unreadable on it.
+            CompositionLocalProvider(LocalContentColor provides WaBubbleText) {
+                Column {
+                    when (message.type) {
+                        MessageType.IMAGE -> AsyncImage(
+                            model = message.imageUrl,
+                            contentDescription = "Image message",
+                            modifier = Modifier
+                                .widthIn(max = 260.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                        )
+                        MessageType.AUDIO -> AudioMessageBubble(
+                            audioUrl = message.audioUrl,
+                            durationMs = message.audioDurationMs
+                        )
+                        MessageType.TEXT -> Text(text = message.text, color = WaBubbleText)
+                        MessageType.STICKER -> Unit // handled by the early return above
+                    }
+                    Text(
+                        text = formatTime(message.timestamp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = WaBubbleTimestamp,
                         modifier = Modifier
-                            .widthIn(max = 260.dp)
-                            .clip(RoundedCornerShape(8.dp))
+                            .align(Alignment.End)
+                            .padding(top = 4.dp)
                     )
-                    MessageType.AUDIO -> AudioMessageBubble(
-                        audioUrl = message.audioUrl,
-                        durationMs = message.audioDurationMs
-                    )
-                    MessageType.TEXT -> Text(text = message.text)
-                    MessageType.STICKER -> Unit // handled by the early return above
                 }
-                Text(
-                    text = formatTime(message.timestamp),
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier
-                        .align(Alignment.End)
-                        .padding(top = 4.dp)
-                )
             }
         }
     }

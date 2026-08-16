@@ -26,10 +26,14 @@ backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging).
   width; every icon in the app has a long-press tooltip explaining what it does
 - Translate & speak: type a message, pick a language, and send it as a voice
   note in that language instead of text — see "Voice translation" below
+- Calls ring even when the app isn't open on screen, via a background
+  listener service with a full-screen incoming-call notification — see
+  "Background call ringing" below
 
 Not included yet: end-to-end encryption, group chats, status/stories, push
-notification delivery (the FCM token is stored per user, but no Cloud
-Function sends notifications yet).
+notification delivery for new *messages* (the FCM token is stored per user,
+but no Cloud Function sends notifications yet — calls are handled separately,
+see below).
 
 ## Voice & video calls
 
@@ -46,9 +50,9 @@ while the connection is still being established), with a small local preview
 in the top-right corner. Controls: mute, camera on/off, front/back camera
 switch, hang up.
 
-- A call only rings while the recipient has the app open on the chat list
-  screen; there's no background/lock-screen ringing yet (that would require a
-  foreground service with a full-screen notification — a natural next step).
+- A call rings even while the app is backgrounded, thanks to a foreground
+  listener service — see "Background call ringing" below for how it works
+  and its limits (it can't survive the app being force-stopped).
 - Only Google's public STUN servers are configured. This works for most
   networks, but a small fraction of restrictive networks (symmetric NAT,
   some corporate/campus Wi-Fi) may fail to connect without a TURN server,
@@ -157,6 +161,41 @@ Everything runs on-device — no translation API key, no per-request cost.
 - Speech is synthesized at 0.8x the engine's default rate — a translated
   phrase read at normal conversational speed is easy to miss on first
   listen, especially in an unfamiliar language.
+
+## Background call ringing
+
+`CallListenerService` (`data/service/CallListenerService.kt`) is a foreground
+service, started as soon as someone signs in (and stopped on sign-out — see
+the `FirebaseAuth.AuthStateListener` in `WhatsChatNavGraph`), that keeps the
+same "any call for me?" Firestore listener alive independent of which screen
+(if any) is on screen. It shows two notifications:
+
+- A silent, minimum-importance "Listening for calls" notification, required
+  by Android for any foreground service to keep running.
+- When a call comes in: a high-importance, full-screen incoming-call
+  notification (with **Accept**/**Decline** actions) that pops over the lock
+  screen and plays the phone's ringtone + vibration pattern on a loop until
+  it's answered, declined, or the caller cancels. **Accept** deep-links
+  straight into `CallScreen` to join the already-ringing call (via
+  `MainActivity.incomingCallIntent`); **Decline** updates the call's
+  Firestore status without needing to open the app at all.
+
+Limits worth knowing:
+
+- This is a real Android foreground service, not a push notification — it
+  only rings while the app's process is alive. Force-stopping the app (or a
+  phone restart, until you reopen the app once) stops it too. A fully
+  "even after force-quit" experience needs server-side push (an FCM message
+  sent by a Cloud Function whenever a `calls` doc is created) — not set up
+  here, since it requires deploying backend code, not just an app change.
+- Some phone brands (Xiaomi/MIUI, Huawei, Oppo, etc.) aggressively kill
+  background apps by default. On those, open Settings → Apps → WhatsChat and
+  enable "Autostart"/"No restrictions" battery usage so the listener isn't
+  killed a few minutes after you leave the app.
+- On Android 14+, the OS may require you to grant the "Display over other
+  apps"/full-screen notification permission manually the first time (Settings
+  → Apps → WhatsChat → Notifications) for the incoming-call screen to pop up
+  automatically while the phone is locked.
 
 ## Deleting messages
 
@@ -310,8 +349,9 @@ emulator or device (minSdk 24 / Android 7.0+).
 ## Suggested next steps
 
 - Group chats (extend `participants` beyond 2, adjust the chat id scheme)
-- Push notifications via a Cloud Function triggered on new messages
+- Push notifications via a Cloud Function triggered on new messages (and, for
+  calls, an FCM push so ringing survives a force-stopped app, not just a
+  backgrounded one — see "Background call ringing")
 - End-to-end encryption
-- A TURN server for calls on restrictive networks, and a foreground service
-  so calls can ring outside the app
+- A TURN server for calls on restrictive networks
 - Message delivery/read receipts
