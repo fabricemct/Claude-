@@ -103,6 +103,13 @@ class ChatViewModel(
         }
     }
 
+    /** Deletes several messages at once (e.g. from multi-select), one at a time so the chat preview stays consistent as each is removed. */
+    fun deleteMessages(messageIds: Set<String>) {
+        viewModelScope.launch {
+            messageIds.forEach { chatRepository.deleteMessage(chatId, it) }
+        }
+    }
+
     class Factory(private val chatId: String) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T = ChatViewModel(chatId) as T

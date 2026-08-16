@@ -26,6 +26,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Image
@@ -166,6 +168,18 @@ fun ChatScreen(
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
     }
 
+    // Long-pressing an own message starts multi-select; tapping other own messages
+    // while active adds/removes them, and the trash icon in the contextual app bar
+    // deletes the whole selection at once.
+    var selectedMessageIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    val inSelectionMode = selectedMessageIds.isNotEmpty()
+
+    fun toggleSelection(messageId: String) {
+        selectedMessageIds =
+            if (messageId in selectedMessageIds) selectedMessageIds - messageId else selectedMessageIds + messageId
+    }
+
     if (pendingVoicePcm != null) {
         AlertDialog(
             onDismissRequest = { pendingVoicePcm = null },
@@ -272,42 +286,62 @@ fun ChatScreen(
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    val otherIsTyping by viewModel.otherIsTyping.collectAsState()
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Avatar(photoUrl = otherUserPhoto, name = otherUserName, size = 36.dp)
-                        Column(modifier = Modifier.padding(start = 8.dp)) {
-                            Text(text = otherUserName, fontWeight = FontWeight.SemiBold)
-                            if (otherIsTyping) {
-                                TypingIndicatorText()
+            if (inSelectionMode) {
+                CenterAlignedTopAppBar(
+                    title = { Text("${selectedMessageIds.size} selected") },
+                    navigationIcon = {
+                        TooltipIconButton(
+                            icon = Icons.Filled.Close,
+                            description = "Cancel selection",
+                            onClick = { selectedMessageIds = emptySet() }
+                        )
+                    },
+                    actions = {
+                        TooltipIconButton(
+                            icon = Icons.Filled.Delete,
+                            description = "Delete selected",
+                            onClick = { showDeleteConfirm = true }
+                        )
+                    }
+                )
+            } else {
+                CenterAlignedTopAppBar(
+                    title = {
+                        val otherIsTyping by viewModel.otherIsTyping.collectAsState()
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Avatar(photoUrl = otherUserPhoto, name = otherUserName, size = 36.dp)
+                            Column(modifier = Modifier.padding(start = 8.dp)) {
+                                Text(text = otherUserName, fontWeight = FontWeight.SemiBold)
+                                if (otherIsTyping) {
+                                    TypingIndicatorText()
+                                }
                             }
                         }
+                    },
+                    navigationIcon = {
+                        TooltipIconButton(icon = Icons.Filled.ArrowBack, description = "Back", onClick = onBack)
+                    },
+                    actions = {
+                        TooltipIconButton(
+                            icon = Icons.Filled.Call,
+                            description = "Voice call",
+                            onClick = { onStartCall(otherUid, otherUserName, otherUserPhoto, false) },
+                            enabled = otherUid.isNotBlank()
+                        )
+                        TooltipIconButton(
+                            icon = Icons.Filled.Videocam,
+                            description = "Video call",
+                            onClick = { onStartCall(otherUid, otherUserName, otherUserPhoto, true) },
+                            enabled = otherUid.isNotBlank()
+                        )
+                        TooltipIconButton(
+                            icon = Icons.Filled.Face,
+                            description = "Selfie filters",
+                            onClick = { onOpenFilters(chatId) }
+                        )
                     }
-                },
-                navigationIcon = {
-                    TooltipIconButton(icon = Icons.Filled.ArrowBack, description = "Back", onClick = onBack)
-                },
-                actions = {
-                    TooltipIconButton(
-                        icon = Icons.Filled.Call,
-                        description = "Voice call",
-                        onClick = { onStartCall(otherUid, otherUserName, otherUserPhoto, false) },
-                        enabled = otherUid.isNotBlank()
-                    )
-                    TooltipIconButton(
-                        icon = Icons.Filled.Videocam,
-                        description = "Video call",
-                        onClick = { onStartCall(otherUid, otherUserName, otherUserPhoto, true) },
-                        enabled = otherUid.isNotBlank()
-                    )
-                    TooltipIconButton(
-                        icon = Icons.Filled.Face,
-                        description = "Selfie filters",
-                        onClick = { onOpenFilters(chatId) }
-                    )
-                }
-            )
+                )
+            }
         },
         bottomBar = {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -386,21 +420,26 @@ fun ChatScreen(
             }
         }
     ) { padding ->
-        var messageToDelete by remember { mutableStateOf<String?>(null) }
-
-        if (messageToDelete != null) {
+        if (showDeleteConfirm) {
+            val count = selectedMessageIds.size
             AlertDialog(
-                onDismissRequest = { messageToDelete = null },
-                title = { Text("Delete message?") },
-                text = { Text("This removes it for everyone in this conversation.") },
+                onDismissRequest = { showDeleteConfirm = false },
+                title = { Text(if (count > 1) "Delete $count messages?" else "Delete message?") },
+                text = {
+                    Text(
+                        "This removes " + (if (count > 1) "them" else "it") +
+                            " for everyone in this conversation."
+                    )
+                },
                 confirmButton = {
                     TextButton(onClick = {
-                        viewModel.deleteMessage(messageToDelete!!)
-                        messageToDelete = null
+                        viewModel.deleteMessages(selectedMessageIds)
+                        selectedMessageIds = emptySet()
+                        showDeleteConfirm = false
                     }) { Text("Delete") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { messageToDelete = null }) { Text("Cancel") }
+                    TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
                 }
             )
         }
@@ -415,11 +454,21 @@ fun ChatScreen(
         ) {
             items(messages, key = { it.messageId }) { message ->
                 val isOwn = message.senderId == viewModel.currentUid
-                MessageBubble(
-                    message = message,
-                    isOwn = isOwn,
-                    onLongPress = { if (isOwn) messageToDelete = message.messageId }
-                )
+                val isSelected = message.messageId in selectedMessageIds
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent
+                        )
+                ) {
+                    MessageBubble(
+                        message = message,
+                        isOwn = isOwn,
+                        onLongPress = { if (isOwn) toggleSelection(message.messageId) },
+                        onTap = { if (inSelectionMode && isOwn) toggleSelection(message.messageId) }
+                    )
+                }
             }
         }
     }
@@ -427,7 +476,7 @@ fun ChatScreen(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MessageBubble(message: Message, isOwn: Boolean, onLongPress: () -> Unit) {
+private fun MessageBubble(message: Message, isOwn: Boolean, onLongPress: () -> Unit, onTap: () -> Unit) {
     val alignment = if (isOwn) Alignment.End else Alignment.Start
 
     if (message.type == MessageType.STICKER) {
@@ -437,7 +486,7 @@ private fun MessageBubble(message: Message, isOwn: Boolean, onLongPress: () -> U
                 fontSize = 56.sp,
                 modifier = Modifier
                     .padding(4.dp)
-                    .combinedClickable(onClick = {}, onLongClick = onLongPress)
+                    .combinedClickable(onClick = onTap, onLongClick = onLongPress)
             )
         }
         return
@@ -451,7 +500,7 @@ private fun MessageBubble(message: Message, isOwn: Boolean, onLongPress: () -> U
                 .widthIn(max = 280.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(bubbleColor)
-                .combinedClickable(onClick = {}, onLongClick = onLongPress)
+                .combinedClickable(onClick = onTap, onLongClick = onLongPress)
                 .padding(8.dp)
         ) {
             // Bubbles are always a light color by design, regardless of dark mode or

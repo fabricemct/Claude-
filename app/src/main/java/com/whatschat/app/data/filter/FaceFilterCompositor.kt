@@ -18,6 +18,7 @@ object FaceFilterCompositor {
 
     fun apply(source: Bitmap, face: Face, filter: FaceFilter): Bitmap {
         if (filter == FaceFilter.NONE) return source
+        if (filter.kind == FilterKind.WARP) return FaceWarpCompositor.apply(source, face, filter)
         val (centerX, centerY, textSize) = placementFor(filter, face, face.boundingBox)
         return drawEmoji(source, filter.emoji, centerX, centerY, textSize)
     }

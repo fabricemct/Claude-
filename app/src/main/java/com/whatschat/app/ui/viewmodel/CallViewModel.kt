@@ -116,6 +116,11 @@ class CallViewModel(
                     webRtcClient.setRemoteDescription(
                         SessionDescription(SessionDescription.Type.ANSWER, current.answerSdp)
                     )
+                } else if (!isCaller && !remoteDescriptionSet && current.offerSdp.isNotBlank()) {
+                    // The callee only ever reaches this screen after already choosing to
+                    // accept (from the incoming-call prompt), so join the call as soon as
+                    // the offer is available instead of asking for a second confirmation.
+                    accept()
                 }
 
                 if (current.status == CallStatus.DECLINED.name || current.status == CallStatus.ENDED.name) {
@@ -133,8 +138,8 @@ class CallViewModel(
         }
     }
 
-    /** Callee accepts the ringing call once its offer SDP is known. */
-    fun accept() {
+    /** Joins the call as the callee once its offer SDP is known — the user already chose to accept before this screen ever opened. */
+    private fun accept() {
         val id = callId ?: return
         val offerSdp = _call.value?.offerSdp
         if (offerSdp.isNullOrBlank() || remoteDescriptionSet) return
@@ -144,12 +149,6 @@ class CallViewModel(
         webRtcClient.createAnswer { sdp ->
             viewModelScope.launch { callRepository.setAnswer(id, sdp.description) }
         }
-    }
-
-    fun decline() {
-        val id = callId ?: return
-        viewModelScope.launch { callRepository.updateStatus(id, CallStatus.DECLINED) }
-        _phase.value = CallPhase.ENDED
     }
 
     fun toggleMute() {

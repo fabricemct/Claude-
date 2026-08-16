@@ -1,17 +1,30 @@
 package com.whatschat.app.ui.navigation
 
 import android.net.Uri
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.google.firebase.auth.FirebaseAuth
+import com.whatschat.app.data.model.Call
+import com.whatschat.app.data.model.CallStatus
+import com.whatschat.app.data.repository.CallRepository
+import com.whatschat.app.data.repository.UserRepository
 import com.whatschat.app.data.service.CallListenerService
 import com.whatschat.app.ui.screens.auth.LoginScreen
 import com.whatschat.app.ui.screens.auth.RegisterScreen
@@ -20,6 +33,7 @@ import com.whatschat.app.ui.screens.chat.ChatScreen
 import com.whatschat.app.ui.screens.chatlist.ChatListScreen
 import com.whatschat.app.ui.screens.filter.SelfieFilterScreen
 import com.whatschat.app.ui.screens.profile.ProfileScreen
+import kotlinx.coroutines.launch
 
 /** Deep-links straight to an already-ringing call, e.g. from the incoming-call notification's Accept action. */
 data class PendingCallArgs(
@@ -56,12 +70,18 @@ fun WhatsChatNavGraph(
 ) {
     val startDestination = if (FirebaseAuth.getInstance().currentUser != null) Routes.CHAT_LIST else Routes.LOGIN
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val callRepository = remember { CallRepository() }
+    val userRepository = remember { UserRepository() }
+
+    var currentUid by remember { mutableStateOf(FirebaseAuth.getInstance().currentUser?.uid) }
 
     // Keeps a foreground service listening for incoming calls whenever someone is
     // signed in, so a call can ring even while the app isn't the one on screen.
     DisposableEffect(Unit) {
         val auth = FirebaseAuth.getInstance()
         val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+            currentUid = firebaseAuth.currentUser?.uid
             if (firebaseAuth.currentUser != null) {
                 CallListenerService.start(context)
             } else {
@@ -78,6 +98,64 @@ fun WhatsChatNavGraph(
             navController.navigate(Routes.call(call.otherUid, call.name, call.photo, call.callId, call.isVideo))
         }
         onPendingCallConsumed()
+    }
+
+    // A single, app-wide incoming-call listener + prompt, independent of which
+    // screen is on top — previously this only lived on the chat list screen, so
+    // a call went unnoticed in-app whenever you were inside a conversation (or
+    // anywhere else) when it came in.
+    var incomingCall by remember { mutableStateOf<Call?>(null) }
+    var callerName by remember { mutableStateOf("") }
+    var callerPhoto by remember { mutableStateOf("") }
+
+    LaunchedEffect(currentUid) {
+        val uid = currentUid
+        incomingCall = null
+        if (uid != null) {
+            callRepository.observeIncomingCalls(uid).collect { incomingCall = it }
+        }
+    }
+
+    LaunchedEffect(incomingCall?.callId) {
+        val callerId = incomingCall?.callerId
+        if (callerId == null) {
+            callerName = ""
+            callerPhoto = ""
+        } else {
+            val caller = userRepository.getUser(callerId)
+            callerName = caller?.name.orEmpty()
+            callerPhoto = caller?.photoUrl.orEmpty()
+        }
+    }
+
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val alreadyOnCallScreen = currentBackStackEntry?.destination?.route == Routes.CALL
+
+    if (incomingCall != null && !alreadyOnCallScreen) {
+        val call = incomingCall
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text(if (call?.isVideo == true) "Incoming video call" else "Incoming call") },
+            text = { Text((callerName.ifBlank { "Someone" }) + " is calling you") },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (call != null) {
+                        incomingCall = null
+                        navController.navigate(
+                            Routes.call(call.callerId, callerName.ifBlank { "Unknown" }, callerPhoto, call.callId, call.isVideo)
+                        )
+                    }
+                }) { Text("Accept") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    if (call != null) {
+                        incomingCall = null
+                        coroutineScope.launch { callRepository.updateStatus(call.callId, CallStatus.DECLINED) }
+                    }
+                }) { Text("Decline") }
+            }
+        )
     }
 
     NavHost(navController = navController, startDestination = startDestination) {
@@ -108,10 +186,7 @@ fun WhatsChatNavGraph(
                 onOpenChat = { chatId, name, photo ->
                     navController.navigate(Routes.chat(chatId, name, photo))
                 },
-                onOpenProfile = { navController.navigate(Routes.PROFILE) },
-                onAcceptCall = { callId, callerId, callerName, callerPhoto, isVideo ->
-                    navController.navigate(Routes.call(callerId, callerName, callerPhoto, callId, isVideo))
-                }
+                onOpenProfile = { navController.navigate(Routes.PROFILE) }
             )
         }
 

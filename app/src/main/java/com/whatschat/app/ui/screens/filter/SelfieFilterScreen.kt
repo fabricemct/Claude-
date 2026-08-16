@@ -74,6 +74,7 @@ import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import com.whatschat.app.data.filter.FaceFilter
 import com.whatschat.app.data.filter.FaceFilterCompositor
+import com.whatschat.app.data.filter.FilterKind
 import com.whatschat.app.data.repository.AuthRepository
 import com.whatschat.app.data.repository.ChatRepository
 import kotlinx.coroutines.launch
@@ -199,7 +200,7 @@ fun SelfieFilterScreen(
             val currentAutoDisplay by rememberUpdatedState(autoDisplay)
             val effectiveDisplay = manualDisplayOffset ?: autoDisplay
 
-            if (effectiveDisplay != null && selectedFilter != FaceFilter.NONE) {
+            if (effectiveDisplay != null && selectedFilter.kind == FilterKind.EMOJI_OVERLAY) {
                 val emojiSizePx = boxWidthPx * lastWidthRatio * 1.2f
                 val emojiSizeSp = with(density) { emojiSizePx.toDp().toSp() }
                 Text(
@@ -233,9 +234,18 @@ fun SelfieFilterScreen(
                 Icon(Icons.Filled.Close, contentDescription = "Cancel", tint = Color.White)
             }
 
-            if (selectedFilter != FaceFilter.NONE) {
+            if (selectedFilter.kind == FilterKind.EMOJI_OVERLAY && selectedFilter != FaceFilter.NONE) {
                 Text(
                     text = "Drag the emoji to reposition it",
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 16.dp)
+                )
+            } else if (selectedFilter.kind == FilterKind.WARP) {
+                Text(
+                    text = "Applied to your photo once you take it",
                     color = Color.White,
                     fontSize = 13.sp,
                     modifier = Modifier

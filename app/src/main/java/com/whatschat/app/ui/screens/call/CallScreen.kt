@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.FlipCameraAndroid
 import androidx.compose.material.icons.filled.Mic
@@ -188,58 +187,44 @@ fun CallScreen(
                     .padding(bottom = 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                if (phase == CallPhase.RINGING && !viewModel.isCaller) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(48.dp)) {
-                        FilledIconButton(
-                            onClick = { viewModel.decline() },
-                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFFE53935)),
-                            modifier = Modifier.size(64.dp)
-                        ) {
-                            Icon(Icons.Filled.CallEnd, contentDescription = "Decline")
-                        }
-                        FilledIconButton(
-                            onClick = { viewModel.accept() },
-                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFF43A047)),
-                            modifier = Modifier.size(64.dp)
-                        ) {
-                            Icon(Icons.Filled.Call, contentDescription = "Accept")
-                        }
+                // The callee already chose to accept from the incoming-call prompt before
+                // this screen ever opened (see WhatsChatNavGraph), so there's no separate
+                // in-call accept/decline step — just the usual mute/video/hang-up controls,
+                // which double as "hang up" if you change your mind while it's still
+                // connecting.
+                Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                    FilledIconButton(
+                        onClick = { viewModel.toggleMute() },
+                        modifier = Modifier.size(56.dp)
+                    ) {
+                        Icon(
+                            if (muted) Icons.Filled.MicOff else Icons.Filled.Mic,
+                            contentDescription = if (muted) "Unmute" else "Mute"
+                        )
                     }
-                } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                    if (isVideoCall) {
                         FilledIconButton(
-                            onClick = { viewModel.toggleMute() },
+                            onClick = { viewModel.toggleVideo() },
                             modifier = Modifier.size(56.dp)
                         ) {
                             Icon(
-                                if (muted) Icons.Filled.MicOff else Icons.Filled.Mic,
-                                contentDescription = if (muted) "Unmute" else "Mute"
+                                if (videoEnabled) Icons.Filled.Videocam else Icons.Filled.VideocamOff,
+                                contentDescription = if (videoEnabled) "Turn off camera" else "Turn on camera"
                             )
                         }
-                        if (isVideoCall) {
-                            FilledIconButton(
-                                onClick = { viewModel.toggleVideo() },
-                                modifier = Modifier.size(56.dp)
-                            ) {
-                                Icon(
-                                    if (videoEnabled) Icons.Filled.Videocam else Icons.Filled.VideocamOff,
-                                    contentDescription = if (videoEnabled) "Turn off camera" else "Turn on camera"
-                                )
-                            }
-                            FilledIconButton(
-                                onClick = { viewModel.switchCamera() },
-                                modifier = Modifier.size(56.dp)
-                            ) {
-                                Icon(Icons.Filled.FlipCameraAndroid, contentDescription = "Switch camera")
-                            }
-                        }
                         FilledIconButton(
-                            onClick = { viewModel.hangUp() },
-                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFFE53935)),
+                            onClick = { viewModel.switchCamera() },
                             modifier = Modifier.size(56.dp)
                         ) {
-                            Icon(Icons.Filled.CallEnd, contentDescription = "Hang up")
+                            Icon(Icons.Filled.FlipCameraAndroid, contentDescription = "Switch camera")
                         }
+                    }
+                    FilledIconButton(
+                        onClick = { viewModel.hangUp() },
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFFE53935)),
+                        modifier = Modifier.size(56.dp)
+                    ) {
+                        Icon(Icons.Filled.CallEnd, contentDescription = "Hang up")
                     }
                 }
             }

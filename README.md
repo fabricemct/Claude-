@@ -10,17 +10,20 @@ backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging).
   message), plus every other registered contact below — tap any of them,
   chatted-with or not, to open/start a conversation directly (no separate
   "new chat" screen to navigate to)
-- Real-time text messaging, with long-press-to-delete on your own messages
+- Real-time text messaging, with long-press-to-select and multi-select
+  deletion of your own messages
 - Image sharing in a conversation (uploaded to Firebase Storage)
 - Editable profile (name, status, photo)
 - 1:1 voice and video calls (WebRTC, signaled through Firestore — see "Voice
-  & video calls" below)
+  & video calls" below), with an incoming-call prompt that shows up no
+  matter which screen you're on, not just the chat list
 - Funny voice messages: record a message and send it as Woman / Man / Baby /
   Giant / Robot / Alien / Tired / Laughing — see "Voice messages" below
 - Emoji picker and a set of large "stickers" (see "Emoji & stickers" below)
 - "Typing..." indicator, shown while the other participant is composing a message
-- Selfie filters (10 presets) with a live viewfinder preview, positioned on
-  your actual detected face — see "Selfie filters" below
+- Selfie filters (14 presets: 10 emoji overlays with a live viewfinder
+  preview, plus 4 warp effects that reshape your actual face) — see "Selfie
+  filters" below
 - A collapsible toolbar in the chat composer (tap the arrow to reveal emoji /
   stickers / photo / translate / voice) so the message field gets the full
   width; every icon in the app has a long-press tooltip explaining what it does
@@ -49,6 +52,12 @@ Video call UI: the remote video fills the screen (or the contact's avatar
 while the connection is still being established), with a small local preview
 in the top-right corner. Controls: mute, camera on/off, front/back camera
 switch, hang up.
+
+The incoming-call prompt (Accept/Decline) is shown from `WhatsChatNavGraph`
+itself rather than any one screen, so it pops up no matter what you're doing
+in the app — a conversation, your profile, the filter camera, anywhere.
+Accepting takes you straight into the call already connecting; there's no
+second "answer" step once you're in `CallScreen`.
 
 - A call rings even while the app is backgrounded, thanks to a foreground
   listener service — see "Background call ringing" below for how it works
@@ -105,32 +114,47 @@ result is wrapped in a WAV file and uploaded.
 
 ## Selfie filters
 
-The face icon in a conversation opens the front camera. Pick a filter — Dog,
-Cat, Clown, Alien, Party, Glasses, Heart Eyes, Disguise, Crown, Santa (emoji
-standing in for custom artwork) — and a live approximate preview tracks your
-face in the viewfinder. **Drag the emoji** with your finger any time to
-override the auto-tracked spot with an exact position of your choosing; take
-the photo and it's composited at that same spot. If you never drag it, the
-filter is auto-positioned from [ML Kit](https://developers.google.com/ml-kit)'s
-detected face bounding box and landmarks (eyes for Glasses/Heart Eyes, nose
-for Disguise, etc. — see `FilterAnchor` in `FaceFilter.kt`), re-detected on
-the still photo for precision. Either way you can retake or send the result
-as a normal image message.
+The face icon in a conversation opens the front camera. There are two kinds
+of filter, both picked from the same row at the bottom:
 
-- Auto-tracking (no drag) uses two different code paths on purpose: the
-  **live viewfinder preview** uses `ImageAnalysis` on the streaming camera
-  frames, which is inherently approximate — getting per-frame camera
-  rotation and front-camera mirroring exactly right on every device without
-  testing on real hardware is genuinely hard, so treat it as a rough guide.
-  The **final sent photo** re-runs detection on the still image itself (no
-  rotation/mirroring ambiguity there) and composites precisely, so a
-  live-preview misalignment never affects an auto-positioned result.
-- Once you **drag** the filter, that exact screen position is what gets
-  used for the sent photo too (converted from preview to photo pixel space)
-  — no re-detection involved, so it's exactly where you left it, not an
-  approximation. Picking a different filter resets back to auto-tracking.
-- If no face is detected at capture time and the filter was never dragged,
-  the filter is skipped and the plain photo is offered instead of failing.
+- **Emoji overlays** — Dog, Cat, Clown, Alien, Party, Glasses, Heart Eyes,
+  Disguise, Crown, Santa (emoji standing in for custom artwork). A live
+  approximate preview tracks your face in the viewfinder, and you can
+  **drag the emoji** with your finger any time to override the auto-tracked
+  spot with an exact position of your choosing; take the photo and it's
+  composited at that same spot. If you never drag it, the filter is
+  auto-positioned from [ML Kit](https://developers.google.com/ml-kit)'s
+  detected face bounding box and landmarks (eyes for Glasses/Heart Eyes,
+  nose for Disguise, etc. — see `FilterAnchor` in `FaceFilter.kt`),
+  re-detected on the still photo for precision.
+- **Warp filters** — Big Nose, Small Nose, Big Eyes, Small Eyes. These
+  actually reshape the photo's pixels around the detected landmark (a
+  radial bulge for "big", a pinch for "small" — see
+  `FaceWarpCompositor.kt`) rather than drawing anything on top. Reshaping
+  pixels frame-by-frame in the live viewfinder would be too slow to stay
+  smooth, so unlike the emoji overlays there's no live preview for these —
+  the effect is applied once, to the photo, right after you tap capture.
+
+Either way you can retake or send the result as a normal image message.
+
+- Auto-tracking (emoji overlays, no drag) uses two different code paths on
+  purpose: the **live viewfinder preview** uses `ImageAnalysis` on the
+  streaming camera frames, which is inherently approximate — getting
+  per-frame camera rotation and front-camera mirroring exactly right on
+  every device without testing on real hardware is genuinely hard, so treat
+  it as a rough guide. The **final sent photo** re-runs detection on the
+  still image itself (no rotation/mirroring ambiguity there) and composites
+  precisely, so a live-preview misalignment never affects an
+  auto-positioned result.
+- Once you **drag** an emoji overlay, that exact screen position is what
+  gets used for the sent photo too (converted from preview to photo pixel
+  space) — no re-detection involved, so it's exactly where you left it, not
+  an approximation. Picking a different filter resets back to auto-tracking.
+  Warp filters can't be dragged — they always target whichever landmark
+  ML Kit detects on the captured photo.
+- If no face is detected at capture time and an emoji overlay was never
+  dragged, the filter is skipped and the plain photo is offered instead of
+  failing. A warp filter with no detected face is skipped the same way.
 - Camera capture uses CameraX (`Preview` + `ImageCapture` + `ImageAnalysis`,
   front camera); detection uses ML Kit's bundled (on-device, no network)
   face detector, with a faster/lower-accuracy mode for the live stream and a
@@ -199,11 +223,14 @@ Limits worth knowing:
 
 ## Deleting messages
 
-Long-press any message you sent (text, image, voice note, or sticker) for a
-confirm dialog, then it's removed from Firestore for both participants —
-there's no "delete for me only" option and no undo. Deleting the most recent
-message in a chat recomputes the chat list's preview from what's now the
-latest remaining message (or clears it if the chat is now empty).
+Long-press any message you sent (text, image, voice note, or sticker) to
+enter selection mode; tap other messages you sent to add or remove them from
+the selection, then tap the trash icon in the top bar to delete all of them
+at once (a confirm dialog shows how many). They're removed from Firestore
+for both participants — there's no "delete for me only" option and no undo.
+Deleting the most recent message in a chat recomputes the chat list's
+preview from what's now the latest remaining message (or clears it if the
+chat is now empty).
 
 ## Typing indicator
 
