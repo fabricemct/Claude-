@@ -14,6 +14,7 @@ import com.whatschat.app.ui.screens.auth.RegisterScreen
 import com.whatschat.app.ui.screens.call.CallScreen
 import com.whatschat.app.ui.screens.chat.ChatScreen
 import com.whatschat.app.ui.screens.chatlist.ChatListScreen
+import com.whatschat.app.ui.screens.filter.SelfieFilterScreen
 import com.whatschat.app.ui.screens.profile.ProfileScreen
 
 private object Routes {
@@ -23,9 +24,12 @@ private object Routes {
     const val PROFILE = "profile"
     const val CHAT = "chat/{chatId}?name={name}&photo={photo}"
     const val CALL = "call/{otherUid}?name={name}&photo={photo}&callId={callId}&isVideo={isVideo}"
+    const val FILTERS = "filters/{chatId}"
 
     fun chat(chatId: String, name: String, photo: String) =
         "chat/$chatId?name=${Uri.encode(name)}&photo=${Uri.encode(photo)}"
+
+    fun filters(chatId: String) = "filters/$chatId"
 
     fun call(otherUid: String, name: String, photo: String, callId: String = "", isVideo: Boolean = false) =
         "call/$otherUid?name=${Uri.encode(name)}&photo=${Uri.encode(photo)}&callId=${Uri.encode(callId)}&isVideo=$isVideo"
@@ -88,7 +92,20 @@ fun WhatsChatNavGraph(navController: NavHostController = rememberNavController()
                 onBack = { navController.popBackStack() },
                 onStartCall = { otherUid, otherName, otherPhoto, isVideo ->
                     navController.navigate(Routes.call(otherUid, otherName, otherPhoto, isVideo = isVideo))
-                }
+                },
+                onOpenFilters = { chatId -> navController.navigate(Routes.filters(chatId)) }
+            )
+        }
+
+        composable(
+            route = Routes.FILTERS,
+            arguments = listOf(navArgument("chatId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val filterChatId = backStackEntry.arguments?.getString("chatId").orEmpty()
+            SelfieFilterScreen(
+                chatId = filterChatId,
+                onSent = { navController.popBackStack() },
+                onCancel = { navController.popBackStack() }
             )
         }
 

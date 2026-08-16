@@ -84,6 +84,14 @@ dependencies {
     // Voice calls (WebRTC signaled over Firestore)
     implementation("io.getstream:stream-webrtc-android:1.1.1")
 
+    // Face-tracked selfie filters
+    implementation("androidx.camera:camera-core:1.3.4")
+    implementation("androidx.camera:camera-camera2:1.3.4")
+    implementation("androidx.camera:camera-lifecycle:1.3.4")
+    implementation("androidx.camera:camera-view:1.3.4")
+    implementation("com.google.mlkit:face-detection:16.1.7")
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

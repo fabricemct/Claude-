@@ -19,6 +19,9 @@ backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging).
   Giant / Robot / Alien / Tired / Laughing — see "Voice messages" below
 - Emoji picker and a set of large "stickers" (see "Emoji & stickers" below)
 - "Typing..." indicator, shown while the other participant is composing a message
+- Selfie filters: take a photo and send it with an emoji filter (dog, glasses,
+  disguise, crown) positioned on your actual detected face — see "Selfie
+  filters" below
 
 Not included yet: end-to-end encryption, group chats, status/stories, push
 notification delivery (the FCM token is stored per user, but no Cloud
@@ -92,6 +95,28 @@ result is wrapped in a WAV file and uploaded.
   tooling was available while building this) — swap `STICKER_EMOJIS` in
   `EmojiPicker.kt` for real illustrations later if wanted.
 
+## Selfie filters
+
+The face icon in a conversation opens the front camera. Pick a filter (Dog,
+Glasses, Disguise, Crown — again, emoji standing in for custom artwork) and
+take a photo; the filter is drawn onto the still image at the position/scale
+implied by [ML Kit](https://developers.google.com/ml-kit)'s detected face
+bounding box and landmarks (eyes for Glasses, nose for Disguise, etc.), then
+you can retake or send it as a normal image message.
+
+- The filter is applied to the captured photo, not as a live overlay while
+  framing the shot. A live AR-style overlay would need per-frame face
+  detection plus careful handling of camera rotation and front-camera
+  mirroring — very easy to get subtly wrong on a specific device/orientation
+  without being able to test on real hardware, so this trades that off for
+  reliability. Detection still runs on your actual photo, so the filter is
+  genuinely positioned on your face, just revealed after capture rather than
+  during framing.
+- If no face is detected, the filter is skipped and the plain photo is
+  offered instead of failing.
+- Camera capture uses CameraX (`Preview` + `ImageCapture`, front camera);
+  detection uses ML Kit's bundled (on-device, no network) face detector.
+
 ## Typing indicator
 
 Each `chats/{chatId}` document carries a `typingUid`/`typingUpdatedAt` pair.
@@ -112,13 +137,14 @@ app/src/main/java/com/whatschat/app/
 │   ├── repository/               AuthRepository, UserRepository, ChatRepository, CallRepository
 │   ├── webrtc/                   WebRtcClient (PeerConnection wrapper)
 │   ├── audio/                    VoiceRecorder, PcmResampler, WavFile, VoiceEffect
+│   ├── filter/                   FaceFilter, FaceFilterCompositor
 │   └── service/                  FCM token sync service
 └── ui/
     ├── navigation/                Navigation Compose graph
     ├── theme/                     Material 3 theme
     ├── components/                Shared composables (Avatar, EmojiPicker)
     ├── viewmodel/                 AuthViewModel, ChatListViewModel, ChatViewModel, ProfileViewModel, CallViewModel
-    └── screens/                   auth/, chatlist/, chat/, profile/, call/
+    └── screens/                   auth/, chatlist/, chat/, profile/, call/, filter/
 ```
 
 ## Firebase setup (required before the app can run)

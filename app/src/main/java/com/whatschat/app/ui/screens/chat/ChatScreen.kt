@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.EmojiEmotions
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
@@ -86,6 +87,7 @@ fun ChatScreen(
     otherUserPhoto: String,
     onBack: () -> Unit,
     onStartCall: (otherUid: String, otherUserName: String, otherUserPhoto: String, isVideo: Boolean) -> Unit,
+    onOpenFilters: (chatId: String) -> Unit,
     viewModel: ChatViewModel = viewModel(factory = ChatViewModel.Factory(chatId))
 ) {
     val messages by viewModel.messages.collectAsState()
@@ -217,6 +219,9 @@ fun ChatScreen(
                         enabled = otherUid.isNotBlank()
                     ) {
                         Icon(Icons.Filled.Videocam, contentDescription = "Video call")
+                    }
+                    IconButton(onClick = { onOpenFilters(chatId) }) {
+                        Icon(Icons.Filled.Face, contentDescription = "Selfie filters")
                     }
                 }
             )
