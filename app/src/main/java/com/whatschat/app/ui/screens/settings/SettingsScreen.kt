@@ -26,6 +26,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.os.LocaleListCompat
 import com.whatschat.app.R
+import com.whatschat.app.ui.settings.AppUiLanguage
 
 /**
  * Lets the user pick the app's own display language, independent of the
