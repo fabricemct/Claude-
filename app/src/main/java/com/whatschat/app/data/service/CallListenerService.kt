@@ -23,6 +23,7 @@ import com.whatschat.app.data.model.Call
 import com.whatschat.app.data.model.CallStatus
 import com.whatschat.app.data.repository.CallRepository
 import com.whatschat.app.data.repository.UserRepository
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -48,21 +49,32 @@ class CallListenerService : Service() {
         const val ACTION_DECLINE = "com.whatschat.app.action.DECLINE_CALL"
         const val EXTRA_CALL_ID = "callId"
 
+        /**
+         * Best-effort: on some Android versions/OEMs, starting a foreground
+         * service can throw synchronously (e.g. background-start
+         * restrictions) — this runs on the UI thread when called from
+         * [com.whatschat.app.ui.navigation.WhatsChatNavGraph], so an
+         * uncaught exception here would crash the whole app on launch.
+         * Background call ringing is a nice-to-have, never worth that.
+         */
         fun start(context: Context) {
-            val intent = Intent(context, CallListenerService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            runCatching {
+                val intent = Intent(context, CallListenerService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
             }
         }
 
         fun stop(context: Context) {
-            context.stopService(Intent(context, CallListenerService::class.java))
+            runCatching { context.stopService(Intent(context, CallListenerService::class.java)) }
         }
     }
 
-    private val serviceScope = CoroutineScope(SupervisorJob())
+    private val exceptionHandler = CoroutineExceptionHandler { _, _ -> stopRinging() }
+    private val serviceScope = CoroutineScope(SupervisorJob() + exceptionHandler)
     private var listenJob: Job? = null
     private var ringingCallId: String? = null
     private var ringtonePlayer: MediaPlayer? = null
@@ -75,25 +87,40 @@ class CallListenerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannels()
-        startForeground(LISTENING_NOTIFICATION_ID, listeningNotification())
-        vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            (getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        val startedOk = runCatching {
+            createNotificationChannels()
+            startForeground(LISTENING_NOTIFICATION_ID, listeningNotification())
+        }.isSuccess
+
+        if (!startedOk) {
+            // Couldn't become a foreground service on this device — bail out
+            // quietly rather than risk a crash loop; background call ringing
+            // just won't be available until this is diagnosed further.
+            stopSelf()
+            return
         }
+
+        vibrator = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                (getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            }
+        }.getOrNull()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_DECLINE) {
-            val callId = intent.getStringExtra(EXTRA_CALL_ID)
-            if (callId != null) {
-                serviceScope.launch { callRepository.updateStatus(callId, CallStatus.DECLINED) }
+        runCatching {
+            if (intent?.action == ACTION_DECLINE) {
+                val callId = intent.getStringExtra(EXTRA_CALL_ID)
+                if (callId != null) {
+                    serviceScope.launch { callRepository.updateStatus(callId, CallStatus.DECLINED) }
+                }
+                stopRinging()
+            } else {
+                ensureListening()
             }
-            stopRinging()
-        } else {
-            ensureListening()
         }
         return START_STICKY
     }
