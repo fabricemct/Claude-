@@ -27,8 +27,8 @@ backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging).
 - A collapsible toolbar in the chat composer (tap the arrow to reveal emoji /
   stickers / photo / translate / voice) so the message field gets the full
   width; every icon in the app has a long-press tooltip explaining what it does
-- Translate & speak: type a message, pick a language, and send it as a voice
-  note in that language instead of text — see "Voice translation" below
+- Translate: type or speak a message, pick a language, and send it either as
+  a voice note or as text in that language — see "Voice translation" below
 - Calls ring even when the app isn't open on screen, via a background
   listener service with a full-screen incoming-call notification — see
   "Background call ringing" below
@@ -162,29 +162,50 @@ Either way you can retake or send the result as a normal image message.
 
 ## Voice translation
 
-The translate icon next to the message field (enabled once you've typed
-something) lets you send what you typed as a spoken voice note in another
-language instead of as text. Pick a language (English, French, Portuguese,
-German, Spanish, Italian) and the app:
+The translate icon next to the message field opens a choice of three modes,
+then a language picker (English, French, Portuguese, German, Spanish,
+Italian):
 
-1. Detects the language you typed in (ML Kit Language Identification).
-2. Translates the text into the chosen language (ML Kit Translation —
-   downloads a small model for that language pair the first time it's used,
-   then works offline).
-3. Speaks the translated text using Android's built-in text-to-speech engine,
-   writing the audio straight to a WAV file (`TextToSpeech.synthesizeToFile`).
-4. Sends that file as a normal voice message.
+- **⌨️ Type text → send as voice** — translate what's currently typed in the
+  message field and send it as a spoken voice note (only enabled once
+  there's text to translate).
+- **🎤 Speak → send as voice** — say something instead of typing it; it's
+  transcribed, translated, and sent as a voice note in the chosen language.
+- **🎤 Speak → send as text** — say something in your own language and it's
+  transcribed, translated, and sent as a normal *text* message in the chosen
+  language, for a reader who doesn't speak yours.
 
-Everything runs on-device — no translation API key, no per-request cost.
+Under the hood, once there's text (typed or transcribed) to work with:
 
-- If a language's TTS voice isn't installed on the device, this fails with an
-  error message rather than silently producing nothing; the user can install
-  additional TTS voices from the system Settings ("Text-to-speech output").
+1. Detects its language (ML Kit Language Identification).
+2. Translates it into the chosen language (ML Kit Translation — downloads a
+   small model for that language pair the first time it's used, then works
+   offline).
+3. For the two "→ send as voice" modes: speaks the translated text using
+   Android's built-in text-to-speech engine, writing the audio straight to a
+   WAV file (`TextToSpeech.synthesizeToFile`), then sends it as a voice
+   message. For "→ send as text": sends the translated string directly as a
+   text message.
+
+The two "🎤 Speak" modes transcribe what you say first (Android's built-in
+speech recognizer — `SpeechToText.kt`, the same engine behind the keyboard's
+voice-typing button, hinted with the phone's own language setting for
+accuracy). Everything else runs on-device — no translation API key, no
+per-request cost.
+
+- If a language's TTS voice isn't installed on the device, sending as voice
+  fails with an error message rather than silently producing nothing; the
+  user can install additional TTS voices from the system Settings
+  ("Text-to-speech output").
 - The first use of a given language pair pauses briefly to download ML Kit's
   translation model (a few MB); subsequent uses are fast.
 - Speech is synthesized at 0.8x the engine's default rate — a translated
   phrase read at normal conversational speed is easy to miss on first
   listen, especially in an unfamiliar language.
+- Speech recognition needs the device's speech-recognition service (present
+  on virtually all phones with Google Play Services) and asks for microphone
+  access the first time either "Speak" mode is used, separately from the
+  permission prompt for plain voice messages.
 
 ## Background call ringing
 

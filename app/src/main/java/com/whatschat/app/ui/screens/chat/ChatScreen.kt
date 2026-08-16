@@ -100,6 +100,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import androidx.compose.ui.unit.sp
+import com.whatschat.app.data.translate.SpeechToText
+
+/** How the "Translate" flow gets its input text and sends its output. */
+private enum class TranslateMode { TYPE_TO_VOICE, SPEAK_TO_VOICE, SPEAK_TO_TEXT }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -128,7 +132,11 @@ fun ChatScreen(
 
     val scope = rememberCoroutineScope()
     val voiceTranslator = remember { VoiceTranslator(context.applicationContext) }
+    val speechToText = remember { SpeechToText(context.applicationContext) }
+    var showTranslateModeChooser by remember { mutableStateOf(false) }
+    var translateMode by remember { mutableStateOf(TranslateMode.TYPE_TO_VOICE) }
     var showTranslatePicker by remember { mutableStateOf(false) }
+    var isListening by remember { mutableStateOf(false) }
     var translating by remember { mutableStateOf(false) }
     var translateError by remember { mutableStateOf<String?>(null) }
 
@@ -150,6 +158,12 @@ fun ChatScreen(
             isRecording = true
         }
     }
+    // A separate launcher from the one above: granting mic access here should
+    // just unlock the speak-to-translate flow, not also start a plain voice
+    // message recording as a side effect.
+    val speechPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> micGranted = granted }
 
     fun toggleRecording() {
         if (isRecording) {
@@ -228,41 +242,110 @@ fun ChatScreen(
         )
     }
 
-    if (showTranslatePicker || translating || translateError != null) {
+    if (showTranslateModeChooser) {
+        AlertDialog(
+            onDismissRequest = { showTranslateModeChooser = false },
+            title = { Text("Translate") },
+            text = {
+                Column {
+                    TextButton(
+                        enabled = text.isNotBlank(),
+                        onClick = {
+                            translateMode = TranslateMode.TYPE_TO_VOICE
+                            showTranslateModeChooser = false
+                            showTranslatePicker = true
+                        }
+                    ) { Text("⌨️ Type text → send as voice") }
+                    TextButton(onClick = {
+                        showTranslateModeChooser = false
+                        if (!micGranted) {
+                            speechPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        } else {
+                            translateMode = TranslateMode.SPEAK_TO_VOICE
+                            showTranslatePicker = true
+                        }
+                    }) { Text("🎤 Speak → send as voice") }
+                    TextButton(onClick = {
+                        showTranslateModeChooser = false
+                        if (!micGranted) {
+                            speechPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        } else {
+                            translateMode = TranslateMode.SPEAK_TO_TEXT
+                            showTranslatePicker = true
+                        }
+                    }) { Text("🎤 Speak → send as text") }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showTranslateModeChooser = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showTranslatePicker || isListening || translating || translateError != null) {
         AlertDialog(
             onDismissRequest = {
-                if (!translating) {
+                if (!isListening && !translating) {
                     showTranslatePicker = false
                     translateError = null
                 }
             },
-            title = { Text(if (translateError != null) "Translation failed" else "Translate & send as voice") },
+            title = {
+                Text(
+                    when {
+                        translateError != null -> "Translation failed"
+                        isListening -> "Listening..."
+                        translateMode == TranslateMode.SPEAK_TO_TEXT -> "Speak & send as text"
+                        else -> "Translate & send as voice"
+                    }
+                )
+            },
             text = {
                 when {
                     translateError != null -> Text(translateError.orEmpty())
+                    isListening -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                        Text("Speak now...", modifier = Modifier.padding(start = 12.dp))
+                    }
                     translating -> Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                        Text("Translating and generating voice...", modifier = Modifier.padding(start = 12.dp))
+                        Text("Translating...", modifier = Modifier.padding(start = 12.dp))
                     }
                     else -> Column {
                         AppLanguage.entries.forEach { language ->
                             TextButton(onClick = {
-                                val messageText = text
+                                val mode = translateMode
                                 showTranslatePicker = false
-                                translating = true
                                 scope.launch {
                                     runCatching {
-                                        val translated = voiceTranslator.translate(messageText, language)
-                                        val file = File(context.cacheDir, "translate_${System.currentTimeMillis()}.wav")
-                                        voiceTranslator.speakToFile(translated, language.ttsLocale, file)
-                                        val durationMs = WavFile.readDurationMs(file)
-                                        viewModel.sendAudio(file, durationMs)
+                                        val sourceText = if (mode == TranslateMode.TYPE_TO_VOICE) {
+                                            text
+                                        } else {
+                                            isListening = true
+                                            val spoken = speechToText.listen()
+                                            isListening = false
+                                            spoken
+                                        }
+                                        translating = true
+                                        val translated = voiceTranslator.translate(sourceText, language)
+                                        if (mode == TranslateMode.SPEAK_TO_TEXT) {
+                                            viewModel.sendText(translated)
+                                        } else {
+                                            val file = File(context.cacheDir, "translate_${System.currentTimeMillis()}.wav")
+                                            voiceTranslator.speakToFile(translated, language.ttsLocale, file)
+                                            val durationMs = WavFile.readDurationMs(file)
+                                            viewModel.sendAudio(file, durationMs)
+                                        }
                                     }.onSuccess {
-                                        text = ""
-                                        viewModel.onComposerTextChanged("")
+                                        if (mode == TranslateMode.TYPE_TO_VOICE) {
+                                            text = ""
+                                            viewModel.onComposerTextChanged("")
+                                        }
                                     }.onFailure {
                                         translateError = it.message ?: "Something went wrong."
                                     }
+                                    isListening = false
                                     translating = false
                                 }
                             }) {
@@ -274,7 +357,7 @@ fun ChatScreen(
             },
             confirmButton = {},
             dismissButton = {
-                if (!translating) {
+                if (!isListening && !translating) {
                     TextButton(onClick = {
                         showTranslatePicker = false
                         translateError = null
@@ -372,9 +455,8 @@ fun ChatScreen(
                         )
                         TooltipIconButton(
                             icon = Icons.Filled.Translate,
-                            description = "Translate & send as voice",
-                            onClick = { showTranslatePicker = true },
-                            enabled = text.isNotBlank(),
+                            description = "Translate (type or speak, send as voice or text)",
+                            onClick = { showTranslateModeChooser = true },
                             tint = Color(0xFF4CAF50)
                         )
                         TooltipIconButton(

@@ -16,6 +16,15 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.front" android:required="false" />
 
+    <!-- Required on Android 11+ for SpeechRecognizer to find the device's speech
+         recognition service (package visibility) — used by the "speak to translate"
+         feature. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
     <application
         android:name=".WhatsChatApp"
         android:allowBackup="true"
