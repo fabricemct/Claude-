@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,9 +32,11 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,6 +52,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +70,8 @@ import com.whatschat.app.data.audio.VoiceRecorder
 import com.whatschat.app.data.audio.WavFile
 import com.whatschat.app.data.model.Message
 import com.whatschat.app.data.model.MessageType
+import com.whatschat.app.data.translate.AppLanguage
+import com.whatschat.app.data.translate.VoiceTranslator
 import com.whatschat.app.ui.components.COMMON_EMOJIS
 import com.whatschat.app.ui.components.EmojiGridDialog
 import com.whatschat.app.ui.components.STICKER_EMOJIS
@@ -73,6 +79,7 @@ import com.whatschat.app.ui.components.Avatar
 import com.whatschat.app.ui.theme.WaBubbleIncoming
 import com.whatschat.app.ui.theme.WaBubbleOutgoing
 import com.whatschat.app.ui.viewmodel.ChatViewModel
+import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -102,6 +109,12 @@ fun ChatScreen(
 
     var showEmojiPicker by remember { mutableStateOf(false) }
     var showStickerPicker by remember { mutableStateOf(false) }
+
+    val scope = rememberCoroutineScope()
+    val voiceTranslator = remember { VoiceTranslator(context.applicationContext) }
+    var showTranslatePicker by remember { mutableStateOf(false) }
+    var translating by remember { mutableStateOf(false) }
+    var translateError by remember { mutableStateOf<String?>(null) }
 
     val voiceRecorder = remember { VoiceRecorder() }
     var isRecording by remember { mutableStateOf(false) }
@@ -187,6 +200,62 @@ fun ChatScreen(
         )
     }
 
+    if (showTranslatePicker || translating || translateError != null) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!translating) {
+                    showTranslatePicker = false
+                    translateError = null
+                }
+            },
+            title = { Text(if (translateError != null) "Translation failed" else "Translate & send as voice") },
+            text = {
+                when {
+                    translateError != null -> Text(translateError.orEmpty())
+                    translating -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                        Text("Translating and generating voice...", modifier = Modifier.padding(start = 12.dp))
+                    }
+                    else -> Column {
+                        AppLanguage.entries.forEach { language ->
+                            TextButton(onClick = {
+                                val messageText = text
+                                showTranslatePicker = false
+                                translating = true
+                                scope.launch {
+                                    runCatching {
+                                        val translated = voiceTranslator.translate(messageText, language)
+                                        val file = File(context.cacheDir, "translate_${System.currentTimeMillis()}.wav")
+                                        voiceTranslator.speakToFile(translated, language.ttsLocale, file)
+                                        val durationMs = WavFile.readDurationMs(file)
+                                        viewModel.sendAudio(file, durationMs)
+                                    }.onSuccess {
+                                        text = ""
+                                        viewModel.onComposerTextChanged("")
+                                    }.onFailure {
+                                        translateError = it.message ?: "Something went wrong."
+                                    }
+                                    translating = false
+                                }
+                            }) {
+                                Text("${language.flag} ${language.label}")
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                if (!translating) {
+                    TextButton(onClick = {
+                        showTranslatePicker = false
+                        translateError = null
+                    }) { Text("Cancel") }
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -241,6 +310,12 @@ fun ChatScreen(
                 }
                 IconButton(onClick = { imagePicker.launch("image/*") }) {
                     Icon(Icons.Filled.Image, contentDescription = "Send image")
+                }
+                IconButton(
+                    onClick = { showTranslatePicker = true },
+                    enabled = text.isNotBlank()
+                ) {
+                    Icon(Icons.Filled.Translate, contentDescription = "Translate & send as voice")
                 }
                 IconButton(onClick = { toggleRecording() }) {
                     Icon(

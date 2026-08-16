@@ -92,6 +92,10 @@ dependencies {
     implementation("com.google.mlkit:face-detection:16.1.7")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
 
+    // Voice translation (translate a typed message, speak it, send as a voice note)
+    implementation("com.google.mlkit:translate:17.0.3")
+    implementation("com.google.mlkit:language-id:17.0.6")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

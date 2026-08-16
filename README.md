@@ -22,6 +22,8 @@ backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging).
 - Selfie filters: take a photo and send it with an emoji filter (dog, glasses,
   disguise, crown) positioned on your actual detected face — see "Selfie
   filters" below
+- Translate & speak: type a message, pick a language, and send it as a voice
+  note in that language instead of text — see "Voice translation" below
 
 Not included yet: end-to-end encryption, group chats, status/stories, push
 notification delivery (the FCM token is stored per user, but no Cloud
@@ -117,6 +119,29 @@ you can retake or send it as a normal image message.
 - Camera capture uses CameraX (`Preview` + `ImageCapture`, front camera);
   detection uses ML Kit's bundled (on-device, no network) face detector.
 
+## Voice translation
+
+The translate icon next to the message field (enabled once you've typed
+something) lets you send what you typed as a spoken voice note in another
+language instead of as text. Pick a language (English, French, Portuguese,
+German, Spanish, Italian) and the app:
+
+1. Detects the language you typed in (ML Kit Language Identification).
+2. Translates the text into the chosen language (ML Kit Translation —
+   downloads a small model for that language pair the first time it's used,
+   then works offline).
+3. Speaks the translated text using Android's built-in text-to-speech engine,
+   writing the audio straight to a WAV file (`TextToSpeech.synthesizeToFile`).
+4. Sends that file as a normal voice message.
+
+Everything runs on-device — no translation API key, no per-request cost.
+
+- If a language's TTS voice isn't installed on the device, this fails with an
+  error message rather than silently producing nothing; the user can install
+  additional TTS voices from the system Settings ("Text-to-speech output").
+- The first use of a given language pair pauses briefly to download ML Kit's
+  translation model (a few MB); subsequent uses are fast.
+
 ## Typing indicator
 
 Each `chats/{chatId}` document carries a `typingUid`/`typingUpdatedAt` pair.
@@ -138,6 +163,7 @@ app/src/main/java/com/whatschat/app/
 │   ├── webrtc/                   WebRtcClient (PeerConnection wrapper)
 │   ├── audio/                    VoiceRecorder, PcmResampler, WavFile, VoiceEffect
 │   ├── filter/                   FaceFilter, FaceFilterCompositor
+│   ├── translate/                 AppLanguage, VoiceTranslator
 │   └── service/                  FCM token sync service
 └── ui/
     ├── navigation/                Navigation Compose graph
