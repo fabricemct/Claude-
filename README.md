@@ -10,7 +10,7 @@ backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging).
   message), plus every other registered contact below — tap any of them,
   chatted-with or not, to open/start a conversation directly (no separate
   "new chat" screen to navigate to)
-- Real-time text messaging
+- Real-time text messaging, with long-press-to-delete on your own messages
 - Image sharing in a conversation (uploaded to Firebase Storage)
 - Editable profile (name, status, photo)
 - 1:1 voice and video calls (WebRTC, signaled through Firestore — see "Voice
@@ -19,9 +19,11 @@ backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging).
   Giant / Robot / Alien / Tired / Laughing — see "Voice messages" below
 - Emoji picker and a set of large "stickers" (see "Emoji & stickers" below)
 - "Typing..." indicator, shown while the other participant is composing a message
-- Selfie filters: take a photo and send it with an emoji filter (dog, glasses,
-  disguise, crown) positioned on your actual detected face — see "Selfie
-  filters" below
+- Selfie filters (10 presets) with a live viewfinder preview, positioned on
+  your actual detected face — see "Selfie filters" below
+- A collapsible toolbar in the chat composer (tap the arrow to reveal emoji /
+  stickers / photo / translate / voice) so the message field gets the full
+  width; every icon in the app has a long-press tooltip explaining what it does
 - Translate & speak: type a message, pick a language, and send it as a voice
   note in that language instead of text — see "Voice translation" below
 
@@ -99,25 +101,32 @@ result is wrapped in a WAV file and uploaded.
 
 ## Selfie filters
 
-The face icon in a conversation opens the front camera. Pick a filter (Dog,
-Glasses, Disguise, Crown — again, emoji standing in for custom artwork) and
-take a photo; the filter is drawn onto the still image at the position/scale
-implied by [ML Kit](https://developers.google.com/ml-kit)'s detected face
-bounding box and landmarks (eyes for Glasses, nose for Disguise, etc.), then
-you can retake or send it as a normal image message.
+The face icon in a conversation opens the front camera. Pick a filter — Dog,
+Cat, Clown, Alien, Party, Glasses, Heart Eyes, Disguise, Crown, Santa (emoji
+standing in for custom artwork) — and a live approximate preview tracks your
+face in the viewfinder so you can see roughly how it'll look. Take the photo
+and the filter is re-drawn precisely at that point, positioned/scaled from
+[ML Kit](https://developers.google.com/ml-kit)'s detected face bounding box
+and landmarks (eyes for Glasses/Heart Eyes, nose for Disguise, etc. — see
+`FilterAnchor` in `FaceFilter.kt`), then you can retake or send it as a
+normal image message.
 
-- The filter is applied to the captured photo, not as a live overlay while
-  framing the shot. A live AR-style overlay would need per-frame face
-  detection plus careful handling of camera rotation and front-camera
-  mirroring — very easy to get subtly wrong on a specific device/orientation
-  without being able to test on real hardware, so this trades that off for
-  reliability. Detection still runs on your actual photo, so the filter is
-  genuinely positioned on your face, just revealed after capture rather than
-  during framing.
-- If no face is detected, the filter is skipped and the plain photo is
-  offered instead of failing.
-- Camera capture uses CameraX (`Preview` + `ImageCapture`, front camera);
-  detection uses ML Kit's bundled (on-device, no network) face detector.
+- Two different code paths, on purpose: the **live viewfinder preview** uses
+  `ImageAnalysis` to detect a face on the streaming camera frames and draws
+  the filter mirrored/scaled to match, which is inherently approximate —
+  getting per-frame camera rotation and front-camera mirroring exactly right
+  on every device without being able to test on real hardware is genuinely
+  hard, so treat it as a rough guide rather than a pixel-perfect AR overlay.
+  The **final sent photo** re-runs detection on the still image itself (no
+  rotation/mirroring ambiguity there) and composites precisely — this path
+  is what actually gets sent, so a live-preview misalignment never affects
+  the result.
+- If no face is detected at capture time, the filter is skipped and the
+  plain photo is offered instead of failing.
+- Camera capture uses CameraX (`Preview` + `ImageCapture` + `ImageAnalysis`,
+  front camera); detection uses ML Kit's bundled (on-device, no network)
+  face detector, with a faster/lower-accuracy mode for the live stream and a
+  higher-accuracy mode for the final capture.
 
 ## Voice translation
 
@@ -141,6 +150,17 @@ Everything runs on-device — no translation API key, no per-request cost.
   additional TTS voices from the system Settings ("Text-to-speech output").
 - The first use of a given language pair pauses briefly to download ML Kit's
   translation model (a few MB); subsequent uses are fast.
+- Speech is synthesized at 0.8x the engine's default rate — a translated
+  phrase read at normal conversational speed is easy to miss on first
+  listen, especially in an unfamiliar language.
+
+## Deleting messages
+
+Long-press any message you sent (text, image, voice note, or sticker) for a
+confirm dialog, then it's removed from Firestore for both participants —
+there's no "delete for me only" option and no undo. Deleting the most recent
+message in a chat recomputes the chat list's preview from what's now the
+latest remaining message (or clears it if the chat is now empty).
 
 ## Typing indicator
 

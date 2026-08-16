@@ -117,6 +117,37 @@ class ChatRepository(
         saveMessage(chatId, senderId, message, previewText = emoji)
     }
 
+    /** Deletes a message and refreshes the chat's last-message preview if needed. */
+    suspend fun deleteMessage(chatId: String, messageId: String) {
+        val chatDoc = chatsCollection.document(chatId)
+        chatDoc.collection("messages").document(messageId).delete().await()
+
+        val latest = chatDoc.collection("messages")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(1)
+            .get()
+            .await()
+            .documents
+            .firstOrNull()
+            ?.toObject(Message::class.java)
+
+        val updates = if (latest != null) {
+            val preview = when (latest.type) {
+                MessageType.IMAGE -> "📷 Photo"
+                MessageType.AUDIO -> "🎤 Voice message"
+                MessageType.STICKER, MessageType.TEXT -> latest.text
+            }
+            mapOf(
+                "lastMessage" to preview,
+                "lastMessageTime" to latest.timestamp,
+                "lastMessageSenderId" to latest.senderId
+            )
+        } else {
+            mapOf("lastMessage" to "", "lastMessageTime" to 0L, "lastMessageSenderId" to "")
+        }
+        runCatching { chatDoc.update(updates).await() }
+    }
+
     suspend fun setTyping(chatId: String, uid: String, isTyping: Boolean) {
         val updates = if (isTyping) {
             mapOf("typingUid" to uid, "typingUpdatedAt" to System.currentTimeMillis())

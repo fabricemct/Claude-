@@ -9,14 +9,19 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +29,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
@@ -46,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -65,12 +72,17 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 
+/** Normalized (0..1) position of the most recently detected face, from the live analysis stream. */
+private data class LiveFaceBox(val centerXRatio: Float, val centerYRatio: Float, val widthRatio: Float)
+
 /**
  * Selfie capture with an emoji "funny filter" positioned on the actual
- * detected face (ML Kit). The filter is applied to the still photo right
- * after it's taken, not as a live overlay while framing the shot — see the
- * README for why (camera rotation/mirroring is very hard to get right
- * without testing on a real device).
+ * detected face (ML Kit). A live, approximate preview of the filter tracks
+ * your face in the viewfinder (via [ImageAnalysis]); the final sent photo
+ * re-detects the face on the still image and composites the filter there
+ * precisely (eyes/nose-aligned, not just approximate), since that path
+ * doesn't depend on getting camera rotation/mirroring exactly right — the
+ * live preview is best-effort and may be slightly offset on some devices.
  */
 @Composable
 fun SelfieFilterScreen(
@@ -114,6 +126,7 @@ fun SelfieFilterScreen(
     var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var sending by remember { mutableStateOf(false) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+    var liveFace by remember { mutableStateOf<LiveFaceBox?>(null) }
 
     val bitmap = capturedBitmap
     if (bitmap == null) {
@@ -129,13 +142,23 @@ fun SelfieFilterScreen(
                         }
                         val capture = ImageCapture.Builder().build()
                         imageCapture = capture
+                        val analysis = ImageAnalysis.Builder()
+                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .build()
+                            .also {
+                                it.setAnalyzer(
+                                    ContextCompat.getMainExecutor(viewContext),
+                                    LiveFaceAnalyzer { face -> liveFace = face }
+                                )
+                            }
                         runCatching {
                             cameraProvider.unbindAll()
                             cameraProvider.bindToLifecycle(
                                 lifecycleOwner,
                                 CameraSelector.DEFAULT_FRONT_CAMERA,
                                 preview,
-                                capture
+                                capture,
+                                analysis
                             )
                         }
                     }, ContextCompat.getMainExecutor(viewContext))
@@ -143,6 +166,26 @@ fun SelfieFilterScreen(
                 },
                 modifier = Modifier.fillMaxSize()
             )
+
+            val face = liveFace
+            if (face != null && selectedFilter != FaceFilter.NONE) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    // The analysis frame isn't mirrored even though the front-camera
+                    // preview is, so the X axis is flipped to line the overlay back up.
+                    val mirroredCenterX = size.width * (1f - face.centerXRatio)
+                    val centerY = size.height * face.centerYRatio
+                    val textSizePx = size.width * face.widthRatio * 1.2f
+                    drawContext.canvas.nativeCanvas.drawText(
+                        selectedFilter.emoji,
+                        mirroredCenterX,
+                        centerY,
+                        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                            textAlign = android.graphics.Paint.Align.CENTER
+                            textSize = textSizePx
+                        }
+                    )
+                }
+            }
 
             IconButton(
                 onClick = onCancel,
@@ -156,7 +199,8 @@ fun SelfieFilterScreen(
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 120.dp),
+                    .padding(bottom = 120.dp)
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 FaceFilter.entries.forEach { filter ->
@@ -240,6 +284,45 @@ fun SelfieFilterScreen(
                 }
             }
         }
+    }
+}
+
+/** Runs ML Kit face detection on the live camera stream for the preview overlay. */
+private class LiveFaceAnalyzer(
+    private val onFaceDetected: (LiveFaceBox?) -> Unit
+) : ImageAnalysis.Analyzer {
+
+    private val detector = FaceDetection.getClient(
+        FaceDetectorOptions.Builder()
+            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+            .build()
+    )
+
+    @ExperimentalGetImage
+    override fun analyze(imageProxy: ImageProxy) {
+        val mediaImage = imageProxy.image
+        if (mediaImage == null) {
+            imageProxy.close()
+            return
+        }
+        val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+        detector.process(inputImage)
+            .addOnSuccessListener { faces ->
+                val box = faces.firstOrNull()?.boundingBox
+                onFaceDetected(
+                    if (box == null) {
+                        null
+                    } else {
+                        LiveFaceBox(
+                            centerXRatio = box.exactCenterX() / inputImage.width,
+                            centerYRatio = box.exactCenterY() / inputImage.height,
+                            widthRatio = box.width().toFloat() / inputImage.width
+                        )
+                    }
+                )
+            }
+            .addOnFailureListener { onFaceDetected(null) }
+            .addOnCompleteListener { imageProxy.close() }
     }
 }
 

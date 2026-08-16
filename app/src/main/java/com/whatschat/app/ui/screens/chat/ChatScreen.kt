@@ -5,7 +5,9 @@ import android.content.pm.PackageManager
 import android.media.MediaPlayer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -27,6 +29,8 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -40,11 +44,16 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -58,6 +67,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -109,6 +119,7 @@ fun ChatScreen(
 
     var showEmojiPicker by remember { mutableStateOf(false) }
     var showStickerPicker by remember { mutableStateOf(false) }
+    var showTools by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val voiceTranslator = remember { VoiceTranslator(context.applicationContext) }
@@ -272,76 +283,120 @@ fun ChatScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
-                    }
+                    TooltipIconButton(icon = Icons.Filled.ArrowBack, description = "Back", onClick = onBack)
                 },
                 actions = {
-                    IconButton(
+                    TooltipIconButton(
+                        icon = Icons.Filled.Call,
+                        description = "Voice call",
                         onClick = { onStartCall(otherUid, otherUserName, otherUserPhoto, false) },
                         enabled = otherUid.isNotBlank()
-                    ) {
-                        Icon(Icons.Filled.Call, contentDescription = "Voice call")
-                    }
-                    IconButton(
+                    )
+                    TooltipIconButton(
+                        icon = Icons.Filled.Videocam,
+                        description = "Video call",
                         onClick = { onStartCall(otherUid, otherUserName, otherUserPhoto, true) },
                         enabled = otherUid.isNotBlank()
-                    ) {
-                        Icon(Icons.Filled.Videocam, contentDescription = "Video call")
-                    }
-                    IconButton(onClick = { onOpenFilters(chatId) }) {
-                        Icon(Icons.Filled.Face, contentDescription = "Selfie filters")
-                    }
+                    )
+                    TooltipIconButton(
+                        icon = Icons.Filled.Face,
+                        description = "Selfie filters",
+                        onClick = { onOpenFilters(chatId) }
+                    )
                 }
             )
         },
         bottomBar = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = { showEmojiPicker = true }) {
-                    Icon(Icons.Filled.EmojiEmotions, contentDescription = "Emoji")
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (showTools) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        TooltipIconButton(
+                            icon = Icons.Filled.EmojiEmotions,
+                            description = "Emoji",
+                            onClick = { showEmojiPicker = true }
+                        )
+                        TooltipIconButton(
+                            icon = Icons.Filled.Star,
+                            description = "Stickers",
+                            onClick = { showStickerPicker = true }
+                        )
+                        TooltipIconButton(
+                            icon = Icons.Filled.Image,
+                            description = "Send a photo",
+                            onClick = { imagePicker.launch("image/*") }
+                        )
+                        TooltipIconButton(
+                            icon = Icons.Filled.Translate,
+                            description = "Translate & send as voice",
+                            onClick = { showTranslatePicker = true },
+                            enabled = text.isNotBlank()
+                        )
+                        TooltipIconButton(
+                            icon = Icons.Filled.Mic,
+                            description = if (isRecording) "Stop recording" else "Record a voice message",
+                            onClick = { toggleRecording() },
+                            tint = if (isRecording) Color(0xFFE53935) else LocalContentColor.current
+                        )
+                    }
                 }
-                IconButton(onClick = { showStickerPicker = true }) {
-                    Icon(Icons.Filled.Star, contentDescription = "Stickers")
-                }
-                IconButton(onClick = { imagePicker.launch("image/*") }) {
-                    Icon(Icons.Filled.Image, contentDescription = "Send image")
-                }
-                IconButton(
-                    onClick = { showTranslatePicker = true },
-                    enabled = text.isNotBlank()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Filled.Translate, contentDescription = "Translate & send as voice")
-                }
-                IconButton(onClick = { toggleRecording() }) {
-                    Icon(
-                        Icons.Filled.Mic,
-                        contentDescription = if (isRecording) "Stop recording" else "Record voice message",
-                        tint = if (isRecording) Color(0xFFE53935) else MaterialTheme.colorScheme.onSurface
+                    TooltipIconButton(
+                        icon = if (showTools) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                        description = if (showTools) "Hide options" else "More options (emoji, stickers, photo, translate, voice)",
+                        onClick = { showTools = !showTools }
                     )
-                }
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = {
-                        text = it
-                        viewModel.onComposerTextChanged(it)
-                    },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text(if (isRecording) "Recording... tap mic to stop" else "Message") }
-                )
-                IconButton(onClick = {
-                    viewModel.sendText(text)
-                    text = ""
-                }) {
-                    Icon(Icons.Filled.Send, contentDescription = "Send")
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = {
+                            text = it
+                            viewModel.onComposerTextChanged(it)
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 4.dp),
+                        placeholder = { Text(if (isRecording) "Recording... tap mic to stop" else "Message") }
+                    )
+                    TooltipIconButton(
+                        icon = Icons.Filled.Send,
+                        description = "Send",
+                        onClick = {
+                            viewModel.sendText(text)
+                            text = ""
+                        }
+                    )
                 }
             }
         }
     ) { padding ->
+        var messageToDelete by remember { mutableStateOf<String?>(null) }
+
+        if (messageToDelete != null) {
+            AlertDialog(
+                onDismissRequest = { messageToDelete = null },
+                title = { Text("Delete message?") },
+                text = { Text("This removes it for everyone in this conversation.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.deleteMessage(messageToDelete!!)
+                        messageToDelete = null
+                    }) { Text("Delete") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { messageToDelete = null }) { Text("Cancel") }
+                }
+            )
+        }
+
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -351,19 +406,31 @@ fun ChatScreen(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             items(messages, key = { it.messageId }) { message ->
-                MessageBubble(message = message, isOwn = message.senderId == viewModel.currentUid)
+                val isOwn = message.senderId == viewModel.currentUid
+                MessageBubble(
+                    message = message,
+                    isOwn = isOwn,
+                    onLongPress = { if (isOwn) messageToDelete = message.messageId }
+                )
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MessageBubble(message: Message, isOwn: Boolean) {
+private fun MessageBubble(message: Message, isOwn: Boolean, onLongPress: () -> Unit) {
     val alignment = if (isOwn) Alignment.End else Alignment.Start
 
     if (message.type == MessageType.STICKER) {
         Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
-            Text(text = message.text, fontSize = 56.sp, modifier = Modifier.padding(4.dp))
+            Text(
+                text = message.text,
+                fontSize = 56.sp,
+                modifier = Modifier
+                    .padding(4.dp)
+                    .combinedClickable(onClick = {}, onLongClick = onLongPress)
+            )
         }
         return
     }
@@ -376,6 +443,7 @@ private fun MessageBubble(message: Message, isOwn: Boolean) {
                 .widthIn(max = 280.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(bubbleColor)
+                .combinedClickable(onClick = {}, onLongClick = onLongPress)
                 .padding(8.dp)
         ) {
             Column {
@@ -408,6 +476,28 @@ private fun MessageBubble(message: Message, isOwn: Boolean) {
 
 private fun formatTime(timestamp: Long): String =
     SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
+
+/** An [IconButton] that reveals what it does via a long-press tooltip, using [description] both as the a11y label and the tooltip text. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TooltipIconButton(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    tint: Color = LocalContentColor.current
+) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(description) } },
+        state = rememberTooltipState()
+    ) {
+        IconButton(onClick = onClick, enabled = enabled, modifier = modifier) {
+            Icon(icon, contentDescription = description, tint = tint)
+        }
+    }
+}
 
 @Composable
 private fun TypingIndicatorText() {

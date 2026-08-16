@@ -3,6 +3,8 @@ package com.whatschat.app.data.filter
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.PointF
+import android.graphics.Rect
 import com.google.mlkit.vision.face.Face
 import com.google.mlkit.vision.face.FaceLandmark
 
@@ -22,36 +24,30 @@ object FaceFilterCompositor {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
         val box = face.boundingBox
 
-        when (filter) {
-            FaceFilter.DOG -> {
-                paint.textSize = box.width() * 1.3f
-                canvas.drawText(filter.emoji, box.exactCenterX(), box.top + box.height() * 0.4f, paint)
-            }
-            FaceFilter.GLASSES -> {
-                val leftEye = face.getLandmark(FaceLandmark.LEFT_EYE)?.position
-                val rightEye = face.getLandmark(FaceLandmark.RIGHT_EYE)?.position
-                val centerX = if (leftEye != null && rightEye != null) (leftEye.x + rightEye.x) / 2f else box.exactCenterX()
-                val centerY = if (leftEye != null && rightEye != null) {
-                    (leftEye.y + rightEye.y) / 2f
-                } else {
-                    box.top + box.height() * 0.4f
-                }
-                paint.textSize = box.width() * 0.9f
-                canvas.drawText(filter.emoji, centerX, centerY + paint.textSize * 0.3f, paint)
-            }
-            FaceFilter.DISGUISE -> {
-                val nose = face.getLandmark(FaceLandmark.NOSE_BASE)?.position
-                val centerX = nose?.x ?: box.exactCenterX()
-                val centerY = nose?.y ?: (box.top + box.height() * 0.55f)
-                paint.textSize = box.width() * 1.0f
-                canvas.drawText(filter.emoji, centerX, centerY + paint.textSize * 0.3f, paint)
-            }
-            FaceFilter.CROWN -> {
-                paint.textSize = box.width() * 1.0f
-                canvas.drawText(filter.emoji, box.exactCenterX(), box.top.toFloat(), paint)
-            }
-            FaceFilter.NONE -> Unit
-        }
+        val (centerX, centerY, textSize) = placementFor(filter, face, box)
+        paint.textSize = textSize
+        canvas.drawText(filter.emoji, centerX, centerY + textSize * 0.3f, paint)
         return result
     }
+
+    private fun placementFor(filter: FaceFilter, face: Face, box: Rect): Triple<Float, Float, Float> =
+        when (filter.anchor) {
+            FilterAnchor.EYES -> {
+                val leftEye = face.getLandmark(FaceLandmark.LEFT_EYE)?.position
+                val rightEye = face.getLandmark(FaceLandmark.RIGHT_EYE)?.position
+                val center = midpointOrNull(leftEye, rightEye) ?: PointF(box.exactCenterX(), box.top + box.height() * 0.4f)
+                Triple(center.x, center.y, box.width() * 0.9f)
+            }
+            FilterAnchor.NOSE -> {
+                val nose = face.getLandmark(FaceLandmark.NOSE_BASE)?.position
+                val x = nose?.x ?: box.exactCenterX()
+                val y = nose?.y ?: (box.top + box.height() * 0.55f)
+                Triple(x, y, box.width() * 1.0f)
+            }
+            FilterAnchor.TOP -> Triple(box.exactCenterX(), box.top.toFloat(), box.width() * 1.0f)
+            FilterAnchor.FACE -> Triple(box.exactCenterX(), box.top + box.height() * 0.4f, box.width() * 1.3f)
+        }
+
+    private fun midpointOrNull(a: PointF?, b: PointF?): PointF? =
+        if (a != null && b != null) PointF((a.x + b.x) / 2f, (a.y + b.y) / 2f) else null
 }

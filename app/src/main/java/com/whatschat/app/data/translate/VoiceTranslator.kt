@@ -22,6 +22,10 @@ import kotlin.coroutines.resumeWithException
  */
 class VoiceTranslator(private val context: Context) {
 
+    companion object {
+        private const val SPEECH_RATE = 0.8f
+    }
+
     /** Detects the source language, then translates [text] into [target]. */
     suspend fun translate(text: String, target: AppLanguage): String {
         val sourceCode = identifyLanguage(text)
@@ -59,6 +63,10 @@ class VoiceTranslator(private val context: Context) {
                     )
                     return@TextToSpeech
                 }
+
+                // A bit slower than the device default so a translated phrase is easier
+                // to catch on first listen, especially in an unfamiliar language.
+                engine.setSpeechRate(SPEECH_RATE)
 
                 engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) = Unit
