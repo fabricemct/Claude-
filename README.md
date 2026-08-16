@@ -15,6 +15,7 @@ backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging).
 - Funny voice messages: record a message and send it as Woman / Man / Baby /
   Giant / Robot / Alien / Tired / Laughing — see "Voice messages" below
 - Emoji picker and a set of large "stickers" (see "Emoji & stickers" below)
+- "Typing..." indicator, shown while the other participant is composing a message
 
 Not included yet: video calls, end-to-end encryption, group chats,
 status/stories, push notification delivery (the FCM token is stored per user,
@@ -76,6 +77,15 @@ result is wrapped in a WAV file and uploaded.
   Unicode emoji rendered large, not custom artwork (no image-generation
   tooling was available while building this) — swap `STICKER_EMOJIS` in
   `EmojiPicker.kt` for real illustrations later if wanted.
+
+## Typing indicator
+
+Each `chats/{chatId}` document carries a `typingUid`/`typingUpdatedAt` pair.
+Typing a character in the composer marks the current user as typing (throttled
+to one write per burst of typing rather than per keystroke) and automatically
+clears it after 3 seconds of inactivity or when the message is sent; a status
+older than 6 seconds is also treated as stale on the reading side, so a killed
+app can't leave a permanent "typing..." shown to the other person.
 
 ## Project structure
 
@@ -196,9 +206,9 @@ emulator or device (minSdk 24 / Android 7.0+).
 
 - `users/{uid}`: `name`, `email`, `photoUrl`, `status`, `lastSeen`, `fcmToken`
 - `chats/{chatId}`: `participants` (2 uids), `lastMessage`, `lastMessageTime`,
-  `lastMessageSenderId`. `chatId` is the two participant uids sorted and
-  joined with `_`, so a conversation between the same two users always
-  resolves to the same document.
+  `lastMessageSenderId`, `typingUid`/`typingUpdatedAt`. `chatId` is the two
+  participant uids sorted and joined with `_`, so a conversation between the
+  same two users always resolves to the same document.
 - `chats/{chatId}/messages/{messageId}`: `senderId`, `text` (also used for
   stickers — the emoji character), `imageUrl`, or `audioUrl`/`audioDurationMs`,
   `type` (`TEXT`/`IMAGE`/`AUDIO`/`STICKER`), `timestamp`

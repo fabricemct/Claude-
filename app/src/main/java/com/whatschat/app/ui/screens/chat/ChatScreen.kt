@@ -188,13 +188,15 @@ fun ChatScreen(
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
+                    val otherIsTyping by viewModel.otherIsTyping.collectAsState()
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Avatar(photoUrl = otherUserPhoto, name = otherUserName, size = 36.dp)
-                        Text(
-                            text = otherUserName,
-                            modifier = Modifier.padding(start = 8.dp),
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Column(modifier = Modifier.padding(start = 8.dp)) {
+                            Text(text = otherUserName, fontWeight = FontWeight.SemiBold)
+                            if (otherIsTyping) {
+                                TypingIndicatorText()
+                            }
+                        }
                     }
                 },
                 navigationIcon = {
@@ -237,7 +239,10 @@ fun ChatScreen(
                 }
                 OutlinedTextField(
                     value = text,
-                    onValueChange = { text = it },
+                    onValueChange = {
+                        text = it
+                        viewModel.onComposerTextChanged(it)
+                    },
                     modifier = Modifier.weight(1f),
                     placeholder = { Text(if (isRecording) "Recording... tap mic to stop" else "Message") }
                 )
@@ -316,6 +321,22 @@ private fun MessageBubble(message: Message, isOwn: Boolean) {
 
 private fun formatTime(timestamp: Long): String =
     SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
+
+@Composable
+private fun TypingIndicatorText() {
+    var dotCount by remember { mutableStateOf(1) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(450)
+            dotCount = (dotCount % 3) + 1
+        }
+    }
+    Text(
+        text = "typing" + ".".repeat(dotCount),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.primary
+    )
+}
 
 @Composable
 private fun AudioMessageBubble(audioUrl: String, durationMs: Long) {

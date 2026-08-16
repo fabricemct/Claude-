@@ -23,6 +23,10 @@ class ChatRepository(
 ) {
     private val chatsCollection = firestore.collection("chats")
 
+    companion object {
+        private const val TYPING_TIMEOUT_MS = 6000L
+    }
+
     /** Deterministic chat id so two users always land in the same conversation. */
     private fun chatIdFor(uidA: String, uidB: String) =
         listOf(uidA, uidB).sorted().joinToString("_")
@@ -113,6 +117,26 @@ class ChatRepository(
         saveMessage(chatId, senderId, message, previewText = emoji)
     }
 
+    suspend fun setTyping(chatId: String, uid: String, isTyping: Boolean) {
+        val updates = if (isTyping) {
+            mapOf("typingUid" to uid, "typingUpdatedAt" to System.currentTimeMillis())
+        } else {
+            mapOf("typingUid" to "", "typingUpdatedAt" to 0L)
+        }
+        runCatching { chatsCollection.document(chatId).update(updates).await() }
+    }
+
+    /** Emits the uid currently typing in this chat, or "" if nobody is (or the status is stale). */
+    fun observeTyping(chatId: String): Flow<String> = callbackFlow {
+        val registration = chatsCollection.document(chatId).addSnapshotListener { snapshot, _ ->
+            val typingUid = snapshot?.getString("typingUid").orEmpty()
+            val updatedAt = snapshot?.getLong("typingUpdatedAt") ?: 0L
+            val isStale = System.currentTimeMillis() - updatedAt > TYPING_TIMEOUT_MS
+            trySend(if (isStale) "" else typingUid)
+        }
+        awaitClose { registration.remove() }
+    }
+
     private suspend fun saveMessage(chatId: String, senderId: String, message: Message, previewText: String) {
         val chatDoc = chatsCollection.document(chatId)
         chatDoc.collection("messages").document(message.messageId).set(message).await()
@@ -120,7 +144,9 @@ class ChatRepository(
             mapOf(
                 "lastMessage" to previewText,
                 "lastMessageTime" to message.timestamp,
-                "lastMessageSenderId" to senderId
+                "lastMessageSenderId" to senderId,
+                "typingUid" to "",
+                "typingUpdatedAt" to 0L
             )
         ).await()
     }
