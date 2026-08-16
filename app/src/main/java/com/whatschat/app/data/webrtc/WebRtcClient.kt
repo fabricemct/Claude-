@@ -1,13 +1,12 @@
 package com.whatschat.app.data.webrtc
 
 import android.content.Context
+import android.util.Log
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
 import org.webrtc.Camera2Enumerator
 import org.webrtc.CameraVideoCapturer
 import org.webrtc.DataChannel
-import org.webrtc.DefaultVideoDecoderFactory
-import org.webrtc.DefaultVideoEncoderFactory
 import org.webrtc.EglBase
 import org.webrtc.IceCandidate
 import org.webrtc.MediaConstraints
@@ -17,9 +16,13 @@ import org.webrtc.PeerConnectionFactory
 import org.webrtc.RtpReceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
+import org.webrtc.SoftwareVideoDecoderFactory
+import org.webrtc.SoftwareVideoEncoderFactory
 import org.webrtc.SurfaceTextureHelper
 import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
+
+private const val TAG = "WebRtcClient"
 
 /**
  * Thin wrapper around a single WebRTC peer connection (audio, optionally
@@ -58,14 +61,31 @@ class WebRtcClient(
         PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
     )
 
+    /** A camera-level failure here (as opposed to a signaling/SDP issue) previously failed totally silently. */
+    private val cameraEventsLogger = object : CameraVideoCapturer.CameraEventsHandler {
+        override fun onCameraError(errorDescription: String) = Log.w(TAG, "Camera error: $errorDescription")
+        override fun onCameraDisconnected() = Log.w(TAG, "Camera disconnected")
+        override fun onCameraFreezed(errorDescription: String) = Log.w(TAG, "Camera freezed: $errorDescription")
+        override fun onCameraOpening(cameraName: String) = Log.d(TAG, "Camera opening: $cameraName")
+        override fun onFirstFrameAvailable() = Log.d(TAG, "Camera first frame available")
+        override fun onCameraClosed() = Log.d(TAG, "Camera closed")
+    }
+
     init {
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context.applicationContext)
                 .createInitializationOptions()
         )
+        // Software (not hardware-accelerated) codecs on purpose: hardware
+        // encoder/decoder support varies wildly across Android vendors/chipsets,
+        // and a hardware codec that silently fails to init is a well-known way
+        // to end up with a call that connects and carries audio fine but never
+        // produces any video — with no error surfaced anywhere. Software VP8
+        // works identically on every device at the cost of more CPU/battery,
+        // which is a good trade for a low-resolution 1:1 call.
         peerConnectionFactory = PeerConnectionFactory.builder()
-            .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglBase.eglBaseContext))
-            .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true))
+            .setVideoDecoderFactory(SoftwareVideoDecoderFactory())
+            .setVideoEncoderFactory(SoftwareVideoEncoderFactory())
             .createPeerConnectionFactory()
         audioSource = peerConnectionFactory.createAudioSource(MediaConstraints())
         localAudioTrack = peerConnectionFactory.createAudioTrack("whatschat-audio", audioSource)
@@ -83,6 +103,7 @@ class WebRtcClient(
                 }
 
                 override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
+                    Log.d(TAG, "ICE connection state: $state")
                     when (state) {
                         PeerConnection.IceConnectionState.CONNECTED,
                         PeerConnection.IceConnectionState.COMPLETED -> listener.onConnected()
@@ -103,6 +124,7 @@ class WebRtcClient(
                 override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) = Unit
                 override fun onAddTrack(receiver: RtpReceiver, streams: Array<out MediaStream>) {
                     val track = receiver.track()
+                    Log.d(TAG, "onAddTrack: kind=${track?.kind()} id=${track?.id()}")
                     if (track is VideoTrack) listener.onRemoteVideoTrack(track)
                 }
             }
@@ -115,9 +137,16 @@ class WebRtcClient(
         val enumerator = Camera2Enumerator(context)
         val deviceName = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) }
             ?: enumerator.deviceNames.firstOrNull()
-            ?: return
+        if (deviceName == null) {
+            Log.w(TAG, "startLocalVideo: no camera device found")
+            return
+        }
 
-        val capturer = enumerator.createCapturer(deviceName, null) ?: return
+        val capturer = enumerator.createCapturer(deviceName, cameraEventsLogger)
+        if (capturer == null) {
+            Log.w(TAG, "startLocalVideo: failed to create a capturer for $deviceName")
+            return
+        }
         videoCapturer = capturer
 
         val helper = SurfaceTextureHelper.create("CaptureThread", eglBase.eglBaseContext)
@@ -130,7 +159,8 @@ class WebRtcClient(
 
         val track = peerConnectionFactory.createVideoTrack("whatschat-video", source)
         localVideoTrack = track
-        peerConnection?.addTrack(track, listOf("whatschat-stream"))
+        val sender = peerConnection?.addTrack(track, listOf("whatschat-stream"))
+        Log.d(TAG, "startLocalVideo: local video track added, sender=$sender")
     }
 
     fun switchCamera() {
@@ -186,7 +216,7 @@ class WebRtcClient(
     private open class SdpObserverAdapter : SdpObserver {
         override fun onCreateSuccess(sdp: SessionDescription) = Unit
         override fun onSetSuccess() = Unit
-        override fun onCreateFailure(error: String) = Unit
-        override fun onSetFailure(error: String) = Unit
+        override fun onCreateFailure(error: String) = Log.w(TAG, "SDP create failed: $error")
+        override fun onSetFailure(error: String) = Log.w(TAG, "SDP set failed: $error")
     }
 }

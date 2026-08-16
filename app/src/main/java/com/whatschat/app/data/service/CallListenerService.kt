@@ -15,6 +15,7 @@ import android.os.IBinder
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.firebase.auth.FirebaseAuth
 import com.whatschat.app.MainActivity
@@ -41,6 +42,7 @@ import kotlinx.coroutines.launch
 class CallListenerService : Service() {
 
     companion object {
+        private const val TAG = "CallListenerService"
         private const val LISTENING_CHANNEL_ID = "call_listener"
         private const val INCOMING_CALL_CHANNEL_ID = "incoming_call"
         private const val LISTENING_NOTIFICATION_ID = 1001
@@ -65,7 +67,7 @@ class CallListenerService : Service() {
                 } else {
                     context.startService(intent)
                 }
-            }
+            }.onFailure { Log.w(TAG, "Failed to start the call-listening service", it) }
         }
 
         fun stop(context: Context) {
@@ -87,12 +89,13 @@ class CallListenerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        val startedOk = runCatching {
+        val startResult = runCatching {
             createNotificationChannels()
             startForeground(LISTENING_NOTIFICATION_ID, listeningNotification())
-        }.isSuccess
+        }
+        startResult.onFailure { Log.w(TAG, "Failed to become a foreground service", it) }
 
-        if (!startedOk) {
+        if (startResult.isFailure) {
             // Couldn't become a foreground service on this device — bail out
             // quietly rather than risk a crash loop; background call ringing
             // just won't be available until this is diagnosed further.

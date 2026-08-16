@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.TheaterComedy
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
@@ -142,7 +143,11 @@ fun ChatScreen(
 
     val voiceRecorder = remember { VoiceRecorder() }
     var isRecording by remember { mutableStateOf(false) }
-    var pendingVoicePcm by remember { mutableStateOf<ByteArray?>(null) }
+    // Voice messages send the instant you stop recording — no extra dialog in
+    // the way. The effect applied is whatever was last picked from the (opt-in)
+    // voice-effect picker, defaulting to a plain, unmodified recording.
+    var selectedVoiceEffect by remember { mutableStateOf(VoiceEffect.NORMAL) }
+    var showVoiceEffectPicker by remember { mutableStateOf(false) }
     var micGranted by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
@@ -169,7 +174,13 @@ fun ChatScreen(
         if (isRecording) {
             val pcm = voiceRecorder.stop()
             isRecording = false
-            if (pcm.isNotEmpty()) pendingVoicePcm = pcm
+            if (pcm.isNotEmpty()) {
+                val resampled = PcmResampler.resample(pcm, VoiceRecorder.SAMPLE_RATE, selectedVoiceEffect)
+                val file = File(context.cacheDir, "voice_${System.currentTimeMillis()}.wav")
+                WavFile.write(file, resampled, VoiceRecorder.SAMPLE_RATE)
+                val durationMs = (resampled.size / 2).toLong() * 1000L / VoiceRecorder.SAMPLE_RATE
+                viewModel.sendAudio(file, durationMs)
+            }
         } else if (micGranted) {
             voiceRecorder.start()
             isRecording = true
@@ -194,30 +205,28 @@ fun ChatScreen(
             if (messageId in selectedMessageIds) selectedMessageIds - messageId else selectedMessageIds + messageId
     }
 
-    if (pendingVoicePcm != null) {
+    if (showVoiceEffectPicker) {
         AlertDialog(
-            onDismissRequest = { pendingVoicePcm = null },
-            title = { Text("Choose a voice") },
+            onDismissRequest = { showVoiceEffectPicker = false },
+            title = { Text("Voice for your next recording") },
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     VoiceEffect.entries.forEach { effect ->
                         TextButton(onClick = {
-                            val pcm = pendingVoicePcm ?: return@TextButton
-                            val resampled = PcmResampler.resample(pcm, VoiceRecorder.SAMPLE_RATE, effect)
-                            val file = File(context.cacheDir, "voice_${System.currentTimeMillis()}.wav")
-                            WavFile.write(file, resampled, VoiceRecorder.SAMPLE_RATE)
-                            val durationMs = (resampled.size / 2).toLong() * 1000L / VoiceRecorder.SAMPLE_RATE
-                            viewModel.sendAudio(file, durationMs)
-                            pendingVoicePcm = null
+                            selectedVoiceEffect = effect
+                            showVoiceEffectPicker = false
                         }) {
-                            Text("${effect.emoji} ${effect.label}")
+                            Text(
+                                "${effect.emoji} ${effect.label}" +
+                                    if (effect == selectedVoiceEffect) " ✓" else ""
+                            )
                         }
                     }
                 }
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { pendingVoicePcm = null }) { Text("Cancel") }
+                TextButton(onClick = { showVoiceEffectPicker = false }) { Text("Cancel") }
             }
         )
     }
@@ -461,9 +470,16 @@ fun ChatScreen(
                         )
                         TooltipIconButton(
                             icon = Icons.Filled.Mic,
-                            description = if (isRecording) "Stop recording" else "Record a voice message",
+                            description = if (isRecording) "Stop and send" else "Record a voice message",
                             onClick = { toggleRecording() },
                             tint = if (isRecording) Color(0xFFE53935) else Color(0xFF9C27B0)
+                        )
+                        TooltipIconButton(
+                            icon = Icons.Filled.TheaterComedy,
+                            description = "Voice for your next recording: ${selectedVoiceEffect.emoji} ${selectedVoiceEffect.label}",
+                            onClick = { showVoiceEffectPicker = true },
+                            enabled = !isRecording,
+                            tint = Color(0xFFFF5722)
                         )
                     }
                 }
