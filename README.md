@@ -6,8 +6,10 @@ backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging).
 ## Features (MVP)
 
 - Email/password sign-up and login
-- Directory of registered users to start a new 1:1 conversation
-- Real-time chat list, sorted by most recent message
+- A single chat list screen: existing conversations (sorted by most recent
+  message), plus every other registered contact below — tap any of them,
+  chatted-with or not, to open/start a conversation directly (no separate
+  "new chat" screen to navigate to)
 - Real-time text messaging
 - Image sharing in a conversation (uploaded to Firebase Storage)
 - Editable profile (name, status, photo)

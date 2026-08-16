@@ -14,14 +14,12 @@ import com.whatschat.app.ui.screens.auth.RegisterScreen
 import com.whatschat.app.ui.screens.call.CallScreen
 import com.whatschat.app.ui.screens.chat.ChatScreen
 import com.whatschat.app.ui.screens.chatlist.ChatListScreen
-import com.whatschat.app.ui.screens.chatlist.NewChatScreen
 import com.whatschat.app.ui.screens.profile.ProfileScreen
 
 private object Routes {
     const val LOGIN = "login"
     const val REGISTER = "register"
     const val CHAT_LIST = "chatList"
-    const val NEW_CHAT = "newChat"
     const val PROFILE = "profile"
     const val CHAT = "chat/{chatId}?name={name}&photo={photo}"
     const val CALL = "call/{otherUid}?name={name}&photo={photo}&callId={callId}"
@@ -65,21 +63,9 @@ fun WhatsChatNavGraph(navController: NavHostController = rememberNavController()
                 onOpenChat = { chatId, name, photo ->
                     navController.navigate(Routes.chat(chatId, name, photo))
                 },
-                onOpenNewChat = { navController.navigate(Routes.NEW_CHAT) },
                 onOpenProfile = { navController.navigate(Routes.PROFILE) },
                 onAcceptCall = { callId, callerId, callerName, callerPhoto ->
                     navController.navigate(Routes.call(callerId, callerName, callerPhoto, callId))
-                }
-            )
-        }
-
-        composable(Routes.NEW_CHAT) {
-            NewChatScreen(
-                onBack = { navController.popBackStack() },
-                onChatStarted = { chatId, name, photo ->
-                    navController.navigate(Routes.chat(chatId, name, photo)) {
-                        popUpTo(Routes.CHAT_LIST)
-                    }
                 }
             )
         }

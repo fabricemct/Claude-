@@ -7,11 +7,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -26,14 +24,17 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.whatschat.app.data.model.Chat
+import com.whatschat.app.data.model.User
 import com.whatschat.app.ui.components.Avatar
 import com.whatschat.app.ui.viewmodel.ChatListViewModel
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -42,15 +43,16 @@ import java.util.Locale
 @Composable
 fun ChatListScreen(
     onOpenChat: (chatId: String, otherUserName: String, otherUserPhoto: String) -> Unit,
-    onOpenNewChat: () -> Unit,
     onOpenProfile: () -> Unit,
     onAcceptCall: (callId: String, callerId: String, callerName: String, callerPhoto: String) -> Unit,
     viewModel: ChatListViewModel = viewModel()
 ) {
     val chats by viewModel.chats.collectAsState()
+    val otherUsers by viewModel.otherUsers.collectAsState()
     val incomingCall by viewModel.incomingCall.collectAsState()
     var callerName by remember { mutableStateOf("") }
     var callerPhoto by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(incomingCall?.callId) {
         val callerId = incomingCall?.callerId
@@ -77,6 +79,11 @@ fun ChatListScreen(
         )
     }
 
+    val chattedUids = remember(chats) { chats.mapNotNull { it.otherUser?.uid }.toSet() }
+    val contactsWithoutChat = remember(otherUsers, chattedUids) {
+        otherUsers.filter { it.uid !in chattedUids }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -87,30 +94,51 @@ fun ChatListScreen(
                     }
                 }
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = onOpenNewChat) {
-                Icon(Icons.Filled.Add, contentDescription = "New chat")
-            }
         }
     ) { padding ->
-        if (chats.isEmpty()) {
+        if (chats.isEmpty() && contactsWithoutChat.isEmpty()) {
             Column(modifier = Modifier.padding(padding).padding(24.dp)) {
-                Text("No conversations yet. Tap + to message someone.")
+                Text("No contacts yet. Once someone else signs up, they'll appear here.")
             }
         } else {
-            LazyColumn(modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)) {
-                items(chats, key = { it.chatId }) { chat ->
-                    ChatRow(chat = chat, onClick = {
-                        val user = chat.otherUser
-                        onOpenChat(chat.chatId, user?.name ?: "Unknown", user?.photoUrl ?: "")
-                    })
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            ) {
+                if (chats.isNotEmpty()) {
+                    item(key = "chats_header") { SectionHeader("Chats") }
+                    items(chats, key = { "chat_${it.chatId}" }) { chat ->
+                        ChatRow(chat = chat, onClick = {
+                            val user = chat.otherUser
+                            onOpenChat(chat.chatId, user?.name ?: "Unknown", user?.photoUrl ?: "")
+                        })
+                    }
+                }
+                if (contactsWithoutChat.isNotEmpty()) {
+                    item(key = "contacts_header") { SectionHeader("Contacts") }
+                    items(contactsWithoutChat, key = { "contact_${it.uid}" }) { user ->
+                        ContactRow(user = user, onClick = {
+                            scope.launch {
+                                val chatId = viewModel.startChatWith(user.uid)
+                                if (chatId != null) onOpenChat(chatId, user.name, user.photoUrl)
+                            }
+                        })
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+    )
 }
 
 @Composable
@@ -128,6 +156,16 @@ private fun ChatRow(chat: Chat, onClick: () -> Unit) {
             }
         },
         leadingContent = { Avatar(photoUrl = user?.photoUrl.orEmpty(), name = user?.name.orEmpty()) },
+        modifier = Modifier.clickable(onClick = onClick)
+    )
+}
+
+@Composable
+private fun ContactRow(user: User, onClick: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(user.name, fontWeight = FontWeight.SemiBold) },
+        supportingContent = { Text(user.status, maxLines = 1) },
+        leadingContent = { Avatar(photoUrl = user.photoUrl, name = user.name) },
         modifier = Modifier.clickable(onClick = onClick)
     )
 }
