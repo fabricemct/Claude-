@@ -36,6 +36,9 @@ backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging).
   "Background call ringing" below
 - A Settings screen (gear icon on the chat list) to switch the app's own
   display language — see "App language setting" below
+- Landmark photo lookup: photograph a place and get a translated
+  description of what/where it is (needs a free Gemini API key) — see
+  "Landmark photo lookup" below
 
 Not included yet: end-to-end encryption, group chats, status/stories, push
 notification delivery for new *messages* (the FCM token is stored per user,
@@ -221,6 +224,41 @@ per-request cost.
   on virtually all phones with Google Play Services) and asks for microphone
   access the first time either "Speak" mode is used, separately from the
   permission prompt for plain voice messages.
+
+## Landmark photo lookup
+
+The compass icon next to Translate lets you photograph a place — a
+monument, a building, a city view, a tourist site — and get back a
+description in a language you pick: what it is, where it is, and a short
+write-up. Pick a language, take the photo, and the result shows in a dialog
+with a **Send to chat** button if you want to share it as a message.
+
+This is the one feature in the app that calls a cloud AI rather than running
+fully on-device: ML Kit (used everywhere else — translation, face
+detection, language ID) only recognizes generic objects/scenes ("tower",
+"building"), not a specific named landmark with its location and history.
+`LandmarkExplainer.kt` sends the photo to Google's Gemini vision model
+(`gemini-2.5-flash`) with a prompt asking for exactly that, in the chosen
+language, via the official `com.google.ai.client.generativeai` SDK.
+
+**Setup (required, one-time):**
+
+1. Get a free Gemini API key at
+   [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (sign in
+   with a Google account, click "Create API key"). There's a generous free
+   quota for this kind of light personal use.
+2. In the project's root folder (next to `app/`), open (or create)
+   `local.properties` — this file already exists for your Android SDK path
+   and is **never committed to git** (it's in `.gitignore`), so it's the
+   right place for a secret.
+3. Add a line: `GEMINI_API_KEY=your-key-here` (no quotes).
+4. Rebuild the app. `build.gradle.kts` reads it into `BuildConfig.GEMINI_API_KEY`
+   at build time — the key never appears in source code or version control.
+
+If a key isn't configured, the feature fails with a clear error message
+(rather than crashing) telling you to add it. Since an API key pasted into a
+chat/terminal history is effectively no longer private, if you ever share a
+key that way, it's good practice to regenerate it from AI Studio afterwards.
 
 ## Background call ringing
 

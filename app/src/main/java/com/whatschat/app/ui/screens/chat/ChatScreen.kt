@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EmojiEmotions
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -82,6 +83,7 @@ import com.whatschat.app.data.audio.PcmResampler
 import com.whatschat.app.data.audio.VoiceEffect
 import com.whatschat.app.data.audio.VoiceRecorder
 import com.whatschat.app.data.audio.WavFile
+import com.whatschat.app.data.landmark.LandmarkExplainer
 import com.whatschat.app.data.model.Message
 import com.whatschat.app.data.model.MessageType
 import com.whatschat.app.data.translate.AppLanguage
@@ -140,6 +142,42 @@ fun ChatScreen(
     var isListening by remember { mutableStateOf(false) }
     var translating by remember { mutableStateOf(false) }
     var translateError by remember { mutableStateOf<String?>(null) }
+
+    // Landmark photo lookup: take a photo of a place, pick a language, and
+    // Gemini's vision model identifies/describes it — the one feature here
+    // that calls a cloud AI rather than running fully on-device.
+    val landmarkExplainer = remember { LandmarkExplainer() }
+    var showLandmarkLanguagePicker by remember { mutableStateOf(false) }
+    var landmarkLanguage by remember { mutableStateOf<AppLanguage?>(null) }
+    var landmarkLoading by remember { mutableStateOf(false) }
+    var landmarkResult by remember { mutableStateOf<String?>(null) }
+    var landmarkError by remember { mutableStateOf<String?>(null) }
+    var cameraGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val landmarkCameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        val language = landmarkLanguage
+        if (bitmap != null && language != null) {
+            landmarkLoading = true
+            scope.launch {
+                runCatching { landmarkExplainer.explain(bitmap, language) }
+                    .onSuccess { landmarkResult = it }
+                    .onFailure { landmarkError = it.message ?: "Something went wrong." }
+                landmarkLoading = false
+            }
+        }
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        cameraGranted = granted
+        if (granted) landmarkCameraLauncher.launch()
+    }
 
     val voiceRecorder = remember { VoiceRecorder() }
     var isRecording by remember { mutableStateOf(false) }
@@ -227,6 +265,76 @@ fun ChatScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showVoiceEffectPicker = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showLandmarkLanguagePicker) {
+        AlertDialog(
+            onDismissRequest = { showLandmarkLanguagePicker = false },
+            title = { Text("Identify a place") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "Pick a language for the description, then take a photo.",
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    AppLanguage.entries.forEach { language ->
+                        TextButton(onClick = {
+                            landmarkLanguage = language
+                            showLandmarkLanguagePicker = false
+                            if (cameraGranted) {
+                                landmarkCameraLauncher.launch()
+                            } else {
+                                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                            }
+                        }) {
+                            Text("${language.flag} ${language.label}")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showLandmarkLanguagePicker = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (landmarkLoading || landmarkResult != null || landmarkError != null) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!landmarkLoading) {
+                    landmarkResult = null
+                    landmarkError = null
+                }
+            },
+            title = { Text(if (landmarkError != null) "Couldn't identify it" else "About this place") },
+            text = {
+                when {
+                    landmarkLoading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                        Text("Looking it up...", modifier = Modifier.padding(start = 12.dp))
+                    }
+                    landmarkError != null -> Text(landmarkError.orEmpty())
+                    else -> Text(landmarkResult.orEmpty())
+                }
+            },
+            confirmButton = {
+                if (landmarkResult != null) {
+                    TextButton(onClick = {
+                        viewModel.sendText(landmarkResult.orEmpty())
+                        landmarkResult = null
+                    }) { Text("Send to chat") }
+                }
+            },
+            dismissButton = {
+                if (!landmarkLoading) {
+                    TextButton(onClick = {
+                        landmarkResult = null
+                        landmarkError = null
+                    }) { Text("Close") }
+                }
             }
         )
     }
@@ -467,6 +575,12 @@ fun ChatScreen(
                             description = "Translate (type or speak, send as voice or text)",
                             onClick = { showTranslateModeChooser = true },
                             tint = Color(0xFF4CAF50)
+                        )
+                        TooltipIconButton(
+                            icon = Icons.Filled.Explore,
+                            description = "Identify a place from a photo (landmark, building, city)",
+                            onClick = { showLandmarkLanguagePicker = true },
+                            tint = Color(0xFF00BCD4)
                         )
                         TooltipIconButton(
                             icon = Icons.Filled.Mic,
