@@ -1,20 +1,9 @@
-import java.util.Properties
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.gms.google-services")
 }
-
-// Read from local.properties (gitignored, never committed) rather than hardcoding a
-// secret in a file that gets pushed to GitHub — see README's "Landmark photo lookup"
-// section for how to add GEMINI_API_KEY there.
-val localProperties = Properties().apply {
-    val file = rootProject.file("local.properties")
-    if (file.exists()) file.inputStream().use { load(it) }
-}
-val geminiApiKey: String = localProperties.getProperty("GEMINI_API_KEY", "")
 
 android {
     namespace = "com.whatschat.app"
@@ -26,8 +15,6 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
-
-        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -53,7 +40,6 @@ android {
 
     buildFeatures {
         compose = true
-        buildConfig = true
     }
 
     packaging {
@@ -115,9 +101,6 @@ dependencies {
     // Voice translation (translate a typed message, speak it, send as a voice note)
     implementation("com.google.mlkit:translate:17.0.3")
     implementation("com.google.mlkit:language-id:17.0.6")
-
-    // Landmark photo lookup (Gemini vision model identifies/describes a photographed place)
-    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
