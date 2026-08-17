@@ -139,6 +139,12 @@ fun ChatScreen(
     val speechToText = remember { SpeechToText(context.applicationContext) }
     var showTranslateModeChooser by remember { mutableStateOf(false) }
     var translateMode by remember { mutableStateOf(TranslateMode.TYPE_TO_VOICE) }
+    // For the two "Speak" modes: which language you're about to speak, asked
+    // explicitly instead of guessing from the phone's system language — that
+    // guess breaks as soon as the phone's own language doesn't match what
+    // you're actually saying (e.g. a French speaker with a German phone).
+    var speakSourceLanguage by remember { mutableStateOf<AppLanguage?>(null) }
+    var showSpeakSourcePicker by remember { mutableStateOf(false) }
     var showTranslatePicker by remember { mutableStateOf(false) }
     var isListening by remember { mutableStateOf(false) }
     var translating by remember { mutableStateOf(false) }
@@ -283,7 +289,7 @@ fun ChatScreen(
                             speechPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                         } else {
                             translateMode = TranslateMode.SPEAK_TO_VOICE
-                            showTranslatePicker = true
+                            showSpeakSourcePicker = true
                         }
                     }) { Text("🎤 Speak → send as voice") }
                     TextButton(onClick = {
@@ -292,7 +298,7 @@ fun ChatScreen(
                             speechPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                         } else {
                             translateMode = TranslateMode.SPEAK_TO_TEXT
-                            showTranslatePicker = true
+                            showSpeakSourcePicker = true
                         }
                     }) { Text("🎤 Speak → send as text") }
                 }
@@ -300,6 +306,30 @@ fun ChatScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showTranslateModeChooser = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showSpeakSourcePicker) {
+        AlertDialog(
+            onDismissRequest = { showSpeakSourcePicker = false },
+            title = { Text("What language will you speak?") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    AppLanguage.entries.forEach { language ->
+                        TextButton(onClick = {
+                            speakSourceLanguage = language
+                            showSpeakSourcePicker = false
+                            showTranslatePicker = true
+                        }) {
+                            Text("${language.flag} ${language.label}")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showSpeakSourcePicker = false }) { Text("Cancel") }
             }
         )
     }
@@ -317,8 +347,8 @@ fun ChatScreen(
                     when {
                         translateError != null -> "Translation failed"
                         isListening -> "Listening..."
-                        translateMode == TranslateMode.SPEAK_TO_TEXT -> "Speak & send as text"
-                        else -> "Translate & send as voice"
+                        translating -> "Translating..."
+                        else -> "Translate into..."
                     }
                 )
             },
@@ -344,7 +374,9 @@ fun ChatScreen(
                                             text
                                         } else {
                                             isListening = true
-                                            val spoken = speechToText.listen()
+                                            val spoken = speechToText.listen(
+                                                speakSourceLanguage?.ttsLocale ?: Locale.getDefault()
+                                            )
                                             isListening = false
                                             spoken
                                         }

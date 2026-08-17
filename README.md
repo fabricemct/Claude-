@@ -213,11 +213,15 @@ Under the hood, once there's text (typed or transcribed) to work with:
    message. For "→ send as text": sends the translated string directly as a
    text message.
 
-The two "🎤 Speak" modes transcribe what you say first (Android's built-in
-speech recognizer — `SpeechToText.kt`, the same engine behind the keyboard's
-voice-typing button, hinted with the phone's own language setting for
-accuracy). Everything else runs on-device — no translation API key, no
-per-request cost.
+The two "🎤 Speak" modes ask **which language you're about to speak** first
+(a dedicated picker, before the "translate into" one) — this hint is what
+Android's speech recognizer uses to actually understand you accurately, so
+it has to be the language coming out of your mouth, not the phone's own
+system language or the one you're translating into. Relying on the phone's
+system language instead (`Locale.getDefault()`) breaks the moment those
+don't match — e.g. a French speaker using a phone set to German — so it's
+asked explicitly rather than assumed. Everything else runs on-device — no
+translation API key, no per-request cost.
 
 - If a language's TTS voice isn't installed on the device, sending as voice
   fails with an error message rather than silently producing nothing; the
