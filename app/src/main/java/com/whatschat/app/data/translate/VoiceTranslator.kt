@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.google.mlkit.nl.languageid.LanguageIdentification
+import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.TranslatorOptions
 import com.google.mlkit.nl.translate.Translation
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -37,6 +38,27 @@ class VoiceTranslator(private val context: Context) {
         return try {
             downloadModel(translator)
             translateText(translator, text)
+        } finally {
+            translator.close()
+        }
+    }
+
+    /**
+     * Downloads [language]'s ML Kit translation model ahead of time (paired
+     * with a common pivot language) so translating to/from it later works
+     * without a data connection — useful to run once before a trip while
+     * still on wifi. `translate()` already downloads models on demand, so
+     * this is purely an optional head start, not a requirement.
+     */
+    suspend fun downloadForOffline(language: AppLanguage) {
+        val pivot = if (language == AppLanguage.ENGLISH) TranslateLanguage.FRENCH else TranslateLanguage.ENGLISH
+        val options = TranslatorOptions.Builder()
+            .setSourceLanguage(pivot)
+            .setTargetLanguage(language.mlKitCode)
+            .build()
+        val translator = Translation.getClient(options)
+        try {
+            downloadModel(translator)
         } finally {
             translator.close()
         }

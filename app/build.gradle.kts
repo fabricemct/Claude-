@@ -102,6 +102,13 @@ dependencies {
     implementation("com.google.mlkit:translate:17.0.3")
     implementation("com.google.mlkit:language-id:17.0.6")
 
+    // Photo translation (extract text from a menu/sign/document, on-device, Latin script)
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+
+    // QR code quick-connect: scan a contact's code to jump straight into a chat with them
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    implementation("com.google.zxing:core:3.5.3")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

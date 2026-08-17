@@ -5,9 +5,12 @@ import androidx.lifecycle.ViewModel
 import java.io.File
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.whatschat.app.data.model.Chat
 import com.whatschat.app.data.model.Message
+import com.whatschat.app.data.model.User
 import com.whatschat.app.data.repository.AuthRepository
 import com.whatschat.app.data.repository.ChatRepository
+import com.whatschat.app.data.repository.UserRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +23,8 @@ private const val TYPING_IDLE_DELAY_MS = 3000L
 class ChatViewModel(
     private val chatId: String,
     private val authRepository: AuthRepository = AuthRepository(),
-    private val chatRepository: ChatRepository = ChatRepository()
+    private val chatRepository: ChatRepository = ChatRepository(),
+    private val userRepository: UserRepository = UserRepository()
 ) : ViewModel() {
 
     val currentUid: String? get() = authRepository.currentUser?.uid
@@ -30,6 +34,14 @@ class ChatViewModel(
 
     private val _otherIsTyping = MutableStateFlow(false)
     val otherIsTyping: StateFlow<Boolean> = _otherIsTyping.asStateFlow()
+
+    /** The shared chat document — carries each participant's own preferred-language/auto-translate settings, keyed by uid. */
+    private val _chat = MutableStateFlow<Chat?>(null)
+    val chat: StateFlow<Chat?> = _chat.asStateFlow()
+
+    /** The other participant's live profile (used for their current local time). */
+    private val _otherUser = MutableStateFlow<User?>(null)
+    val otherUser: StateFlow<User?> = _otherUser.asStateFlow()
 
     private var typingIdleJob: Job? = null
     private var typingFlagSet = false
@@ -43,6 +55,25 @@ class ChatViewModel(
                 _otherIsTyping.value = typingUid.isNotBlank() && typingUid != currentUid
             }
         }
+        viewModelScope.launch {
+            chatRepository.observeChat(chatId).collect { _chat.value = it }
+        }
+        val otherUid = chatId.split("_").firstOrNull { it != currentUid }
+        if (otherUid != null) {
+            viewModelScope.launch {
+                userRepository.observeUser(otherUid).collect { _otherUser.value = it }
+            }
+        }
+    }
+
+    fun setPreferredLanguage(languageCode: String) {
+        val uid = currentUid ?: return
+        viewModelScope.launch { chatRepository.setPreferredLanguage(chatId, uid, languageCode) }
+    }
+
+    fun setAutoTranslate(enabled: Boolean) {
+        val uid = currentUid ?: return
+        viewModelScope.launch { chatRepository.setAutoTranslate(chatId, uid, enabled) }
     }
 
     /** Call on every keystroke in the composer to keep the other user's "typing..." status live. */

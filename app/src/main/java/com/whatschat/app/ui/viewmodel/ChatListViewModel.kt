@@ -18,7 +18,7 @@ class ChatListViewModel(
     private val userRepository: UserRepository = UserRepository()
 ) : ViewModel() {
 
-    private val currentUid: String? get() = authRepository.currentUser?.uid
+    val currentUid: String? get() = authRepository.currentUser?.uid
 
     private val _chats = MutableStateFlow<List<Chat>>(emptyList())
     val chats: StateFlow<List<Chat>> = _chats.asStateFlow()

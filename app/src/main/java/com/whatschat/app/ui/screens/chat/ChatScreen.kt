@@ -28,11 +28,13 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -54,6 +56,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TooltipBox
@@ -87,6 +90,7 @@ import com.whatschat.app.data.audio.VoiceRecorder
 import com.whatschat.app.data.audio.WavFile
 import com.whatschat.app.data.model.Message
 import com.whatschat.app.data.model.MessageType
+import com.whatschat.app.data.ocr.PhotoTextRecognizer
 import com.whatschat.app.data.translate.AppLanguage
 import com.whatschat.app.data.translate.VoiceTranslator
 import com.whatschat.app.ui.components.COMMON_EMOJIS
@@ -103,11 +107,20 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import androidx.compose.ui.unit.sp
 import com.whatschat.app.data.translate.SpeechToText
 
 /** How the "Translate" flow gets its input text and sends its output. */
 private enum class TranslateMode { TYPE_TO_VOICE, SPEAK_TO_VOICE, SPEAK_TO_TEXT }
+
+/** Common phrases useful when traveling, offered from the "Quick travel phrases" picker. */
+private val TRAVEL_PHRASES = listOf(
+    "Hello", "Thank you", "Please", "Yes", "No", "Excuse me",
+    "Where is the bathroom?", "How much does this cost?",
+    "I don't understand", "Can you help me?", "I need a doctor",
+    "Where is the nearest hotel?"
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -150,6 +163,16 @@ fun ChatScreen(
     var translating by remember { mutableStateOf(false) }
     var translateError by remember { mutableStateOf<String?>(null) }
 
+    // Quick travel phrasebook: pick a common phrase, then a language, get it
+    // translated with a "listen" and "send to chat" option.
+    var showPhrasebook by remember { mutableStateOf(false) }
+    var phrasebookPhrase by remember { mutableStateOf<String?>(null) }
+    var showPhrasebookLanguagePicker by remember { mutableStateOf(false) }
+    var phrasebookLoading by remember { mutableStateOf(false) }
+    var phrasebookResult by remember { mutableStateOf<String?>(null) }
+    var phrasebookResultLanguage by remember { mutableStateOf<AppLanguage?>(null) }
+    var phrasebookError by remember { mutableStateOf<String?>(null) }
+
     // Per-message translate/listen: tapping the small icon on a text message
     // shows a "Translate" (pick a language, translation appears under the
     // original) and "Listen" (read the message aloud in its own language)
@@ -158,6 +181,75 @@ fun ChatScreen(
     var translateTargetMessageId by remember { mutableStateOf<String?>(null) }
     var showMessageLanguagePicker by remember { mutableStateOf(false) }
     var messageActionError by remember { mutableStateOf<String?>(null) }
+
+    // Per-contact settings: a preferred language for this conversation (used
+    // as the default target everywhere in this chat) and whether incoming
+    // messages should be translated into it automatically.
+    val chat by viewModel.chat.collectAsState()
+    val otherUserProfile by viewModel.otherUser.collectAsState()
+    val preferredLanguage = remember(chat) {
+        val code = chat?.preferredLanguages?.get(viewModel.currentUid)
+        AppLanguage.entries.firstOrNull { it.mlKitCode == code }
+    }
+    val autoTranslateOn = chat?.autoTranslateEnabled?.get(viewModel.currentUid) == true
+    var showConversationSettings by remember { mutableStateOf(false) }
+    var autoTranslatedMessageIds by remember { mutableStateOf(setOf<String>()) }
+
+    LaunchedEffect(messages, autoTranslateOn, preferredLanguage) {
+        val target = preferredLanguage
+        if (!autoTranslateOn || target == null) return@LaunchedEffect
+        messages.filter { message ->
+            message.type == MessageType.TEXT &&
+                message.senderId != viewModel.currentUid &&
+                message.messageId !in messageTranslations &&
+                message.messageId !in autoTranslatedMessageIds
+        }.forEach { message ->
+            autoTranslatedMessageIds = autoTranslatedMessageIds + message.messageId
+            scope.launch {
+                runCatching { voiceTranslator.translate(message.text, target) }
+                    .onSuccess { messageTranslations = messageTranslations + (message.messageId to it) }
+            }
+        }
+    }
+
+    // Photo translation: photograph a menu/sign/document, extract its text
+    // on-device (ML Kit text recognition), then translate it — no cloud AI.
+    var showPhotoTranslateLanguagePicker by remember { mutableStateOf(false) }
+    var photoTranslateLanguage by remember { mutableStateOf<AppLanguage?>(null) }
+    var photoTranslateLoading by remember { mutableStateOf(false) }
+    var photoTranslateResult by remember { mutableStateOf<String?>(null) }
+    var photoTranslateError by remember { mutableStateOf<String?>(null) }
+    var cameraGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val photoTranslateCameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        val language = photoTranslateLanguage
+        if (bitmap != null && language != null) {
+            photoTranslateLoading = true
+            scope.launch {
+                runCatching {
+                    val recognized = PhotoTextRecognizer.recognize(bitmap)
+                    if (recognized.isBlank()) {
+                        throw IllegalStateException("No text found in the photo — try getting closer or a clearer angle.")
+                    }
+                    voiceTranslator.translate(recognized, language)
+                }.onSuccess { photoTranslateResult = it }
+                    .onFailure { photoTranslateError = it.message ?: "Something went wrong." }
+                photoTranslateLoading = false
+            }
+        }
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        cameraGranted = granted
+        if (granted) photoTranslateCameraLauncher.launch()
+    }
 
     val voiceRecorder = remember { VoiceRecorder() }
     var isRecording by remember { mutableStateOf(false) }
@@ -301,6 +393,10 @@ fun ChatScreen(
                             showSpeakSourcePicker = true
                         }
                     }) { Text("🎤 Speak → send as text") }
+                    TextButton(onClick = {
+                        showTranslateModeChooser = false
+                        showPhrasebook = true
+                    }) { Text("📖 Quick travel phrases") }
                 }
             },
             confirmButton = {},
@@ -330,6 +426,113 @@ fun ChatScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showSpeakSourcePicker = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showPhrasebook) {
+        AlertDialog(
+            onDismissRequest = { showPhrasebook = false },
+            title = { Text("Quick travel phrases") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    TRAVEL_PHRASES.forEach { phrase ->
+                        TextButton(onClick = {
+                            phrasebookPhrase = phrase
+                            showPhrasebook = false
+                            showPhrasebookLanguagePicker = true
+                        }) {
+                            Text(phrase)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showPhrasebook = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showPhrasebookLanguagePicker) {
+        AlertDialog(
+            onDismissRequest = { showPhrasebookLanguagePicker = false },
+            title = { Text("Translate into...") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    AppLanguage.entries.forEach { language ->
+                        TextButton(onClick = {
+                            val phrase = phrasebookPhrase
+                            showPhrasebookLanguagePicker = false
+                            if (phrase != null) {
+                                phrasebookLoading = true
+                                phrasebookResultLanguage = language
+                                scope.launch {
+                                    runCatching { voiceTranslator.translate(phrase, language) }
+                                        .onSuccess { phrasebookResult = it }
+                                        .onFailure { phrasebookError = it.message ?: "Something went wrong." }
+                                    phrasebookLoading = false
+                                }
+                            }
+                        }) {
+                            Text("${language.flag} ${language.label}")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showPhrasebookLanguagePicker = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (phrasebookLoading || phrasebookResult != null || phrasebookError != null) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!phrasebookLoading) {
+                    phrasebookResult = null
+                    phrasebookError = null
+                }
+            },
+            title = { Text(if (phrasebookError != null) "Couldn't translate" else phrasebookPhrase.orEmpty()) },
+            text = {
+                when {
+                    phrasebookLoading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                        Text("Translating...", modifier = Modifier.padding(start = 12.dp))
+                    }
+                    phrasebookError != null -> Text(phrasebookError.orEmpty())
+                    else -> Text(phrasebookResult.orEmpty())
+                }
+            },
+            confirmButton = {
+                if (phrasebookResult != null) {
+                    TextButton(onClick = {
+                        viewModel.sendText(phrasebookResult.orEmpty())
+                        phrasebookResult = null
+                    }) { Text("Send to chat") }
+                }
+            },
+            dismissButton = {
+                if (!phrasebookLoading) {
+                    Row {
+                        if (phrasebookResult != null) {
+                            TextButton(onClick = {
+                                val result = phrasebookResult.orEmpty()
+                                val language = phrasebookResultLanguage
+                                scope.launch {
+                                    runCatching { voiceTranslator.speakNow(result, language?.ttsLocale) }
+                                        .onFailure { phrasebookError = it.message ?: "Something went wrong." }
+                                }
+                            }) { Text("🔊 Listen") }
+                        }
+                        TextButton(onClick = {
+                            phrasebookResult = null
+                            phrasebookError = null
+                        }) { Text("Close") }
+                    }
+                }
             }
         )
     }
@@ -462,6 +665,125 @@ fun ChatScreen(
         )
     }
 
+    if (showConversationSettings) {
+        AlertDialog(
+            onDismissRequest = { showConversationSettings = false },
+            title = { Text("Conversation settings") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "Preferred language for $otherUserName",
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    AppLanguage.entries.forEach { language ->
+                        TextButton(onClick = { viewModel.setPreferredLanguage(language.mlKitCode) }) {
+                            Text(
+                                "${language.flag} ${language.label}" +
+                                    if (language == preferredLanguage) " ✓" else ""
+                            )
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 16.dp)
+                    ) {
+                        Text("Auto-translate incoming messages", modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = autoTranslateOn,
+                            onCheckedChange = { checked -> viewModel.setAutoTranslate(checked) },
+                            enabled = preferredLanguage != null
+                        )
+                    }
+                    if (preferredLanguage == null) {
+                        Text(
+                            "Pick a language above first",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showConversationSettings = false }) { Text("Close") }
+            }
+        )
+    }
+
+    if (showPhotoTranslateLanguagePicker) {
+        AlertDialog(
+            onDismissRequest = { showPhotoTranslateLanguagePicker = false },
+            title = { Text("Translate a photo") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "Pick a language, then take a photo of the text (menu, sign, document).",
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    AppLanguage.entries.forEach { language ->
+                        TextButton(onClick = {
+                            photoTranslateLanguage = language
+                            showPhotoTranslateLanguagePicker = false
+                            if (cameraGranted) {
+                                photoTranslateCameraLauncher.launch()
+                            } else {
+                                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                            }
+                        }) {
+                            Text("${language.flag} ${language.label}")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showPhotoTranslateLanguagePicker = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (photoTranslateLoading || photoTranslateResult != null || photoTranslateError != null) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!photoTranslateLoading) {
+                    photoTranslateResult = null
+                    photoTranslateError = null
+                }
+            },
+            title = { Text(if (photoTranslateError != null) "Couldn't translate" else "Translated text") },
+            text = {
+                when {
+                    photoTranslateLoading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                        Text("Reading and translating...", modifier = Modifier.padding(start = 12.dp))
+                    }
+                    photoTranslateError != null -> Text(photoTranslateError.orEmpty())
+                    else -> Text(photoTranslateResult.orEmpty())
+                }
+            },
+            confirmButton = {
+                if (photoTranslateResult != null) {
+                    TextButton(onClick = {
+                        viewModel.sendText(photoTranslateResult.orEmpty())
+                        photoTranslateResult = null
+                    }) { Text("Send to chat") }
+                }
+            },
+            dismissButton = {
+                if (!photoTranslateLoading) {
+                    TextButton(onClick = {
+                        photoTranslateResult = null
+                        photoTranslateError = null
+                    }) { Text("Close") }
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             if (inSelectionMode) {
@@ -486,12 +808,19 @@ fun ChatScreen(
                 CenterAlignedTopAppBar(
                     title = {
                         val otherIsTyping by viewModel.otherIsTyping.collectAsState()
+                        val localTime = otherUserProfile?.timeZoneId?.takeIf { it.isNotBlank() }
+                            ?.let { formatLocalTime(it) }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Avatar(photoUrl = otherUserPhoto, name = otherUserName, size = 36.dp)
                             Column(modifier = Modifier.padding(start = 8.dp)) {
                                 Text(text = otherUserName, fontWeight = FontWeight.SemiBold)
-                                if (otherIsTyping) {
-                                    TypingIndicatorText()
+                                when {
+                                    otherIsTyping -> TypingIndicatorText()
+                                    localTime != null -> Text(
+                                        text = "🕒 $localTime",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
                         }
@@ -516,6 +845,11 @@ fun ChatScreen(
                             icon = Icons.Filled.Face,
                             description = "Selfie filters",
                             onClick = { onOpenFilters(chatId) }
+                        )
+                        TooltipIconButton(
+                            icon = Icons.Filled.Language,
+                            description = "Conversation settings: preferred language, auto-translate",
+                            onClick = { showConversationSettings = true }
                         )
                     }
                 )
@@ -553,6 +887,12 @@ fun ChatScreen(
                             description = "Translate (type or speak, send as voice or text)",
                             onClick = { showTranslateModeChooser = true },
                             tint = Color(0xFF4CAF50)
+                        )
+                        TooltipIconButton(
+                            icon = Icons.Filled.DocumentScanner,
+                            description = "Translate text from a photo (menu, sign, document)",
+                            onClick = { showPhotoTranslateLanguagePicker = true },
+                            tint = Color(0xFF00ACC1)
                         )
                         TooltipIconButton(
                             icon = Icons.Filled.Mic,
@@ -792,6 +1132,12 @@ private fun MessageBubble(
 
 private fun formatTime(timestamp: Long): String =
     SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
+
+private fun formatLocalTime(timeZoneId: String): String {
+    val format = SimpleDateFormat("HH:mm", Locale.getDefault())
+    format.timeZone = TimeZone.getTimeZone(timeZoneId)
+    return format.format(Date())
+}
 
 /** An [IconButton] that reveals what it does via a long-press tooltip, using [description] both as the a11y label and the tooltip text. */
 @OptIn(ExperimentalMaterial3Api::class)

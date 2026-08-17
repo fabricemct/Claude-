@@ -57,6 +57,21 @@ class ChatRepository(
         }
     }
 
+    fun observeChat(chatId: String): Flow<Chat?> = callbackFlow {
+        val registration = chatsCollection.document(chatId).addSnapshotListener { snapshot, _ ->
+            trySend(snapshot?.toObject(Chat::class.java))
+        }
+        awaitClose { registration.remove() }
+    }
+
+    suspend fun setPreferredLanguage(chatId: String, uid: String, languageCode: String) {
+        runCatching { chatsCollection.document(chatId).update("preferredLanguages.$uid", languageCode).await() }
+    }
+
+    suspend fun setAutoTranslate(chatId: String, uid: String, enabled: Boolean) {
+        runCatching { chatsCollection.document(chatId).update("autoTranslateEnabled.$uid", enabled).await() }
+    }
+
     fun observeMessages(chatId: String): Flow<List<Message>> = callbackFlow {
         val registration = chatsCollection.document(chatId).collection("messages")
             .orderBy("timestamp", Query.Direction.ASCENDING)

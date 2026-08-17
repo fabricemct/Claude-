@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -30,6 +31,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.whatschat.app.R
 import com.whatschat.app.data.model.Chat
 import com.whatschat.app.data.model.User
+import com.whatschat.app.data.translate.AppLanguage
 import com.whatschat.app.ui.components.Avatar
 import com.whatschat.app.ui.viewmodel.ChatListViewModel
 import kotlinx.coroutines.launch
@@ -43,6 +45,7 @@ fun ChatListScreen(
     onOpenChat: (chatId: String, otherUserName: String, otherUserPhoto: String) -> Unit,
     onOpenProfile: () -> Unit,
     onOpenSettings: () -> Unit,
+    onScanQr: () -> Unit,
     viewModel: ChatListViewModel = viewModel()
 ) {
     val chats by viewModel.chats.collectAsState()
@@ -59,6 +62,9 @@ fun ChatListScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
+                    IconButton(onClick = onScanQr) {
+                        Icon(Icons.Filled.QrCodeScanner, contentDescription = "Scan a contact's QR code")
+                    }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings))
                     }
@@ -82,7 +88,7 @@ fun ChatListScreen(
                 if (chats.isNotEmpty()) {
                     item(key = "chats_header") { SectionHeader(stringResource(R.string.section_chats)) }
                     items(chats, key = { "chat_${it.chatId}" }) { chat ->
-                        ChatRow(chat = chat, onClick = {
+                        ChatRow(chat = chat, currentUid = viewModel.currentUid, onClick = {
                             val user = chat.otherUser
                             onOpenChat(chat.chatId, user?.name ?: "Unknown", user?.photoUrl ?: "")
                         })
@@ -115,10 +121,17 @@ private fun SectionHeader(title: String) {
 }
 
 @Composable
-private fun ChatRow(chat: Chat, onClick: () -> Unit) {
+private fun ChatRow(chat: Chat, currentUid: String?, onClick: () -> Unit) {
     val user = chat.otherUser
+    val preferredLanguageCode = currentUid?.let { chat.preferredLanguages[it] }
+    val preferredFlag = AppLanguage.entries.firstOrNull { it.mlKitCode == preferredLanguageCode }?.flag
     ListItem(
-        headlineContent = { Text(user?.name ?: "Unknown", fontWeight = FontWeight.SemiBold) },
+        headlineContent = {
+            Text(
+                (user?.name ?: "Unknown") + (preferredFlag?.let { " $it" } ?: ""),
+                fontWeight = FontWeight.SemiBold
+            )
+        },
         supportingContent = { Text(chat.lastMessage, maxLines = 1) },
         trailingContent = {
             if (chat.lastMessageTime > 0) {

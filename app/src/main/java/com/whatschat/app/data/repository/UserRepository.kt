@@ -35,6 +35,11 @@ class UserRepository(
         awaitClose { registration.remove() }
     }
 
+    /** Refreshed on every sign-in so contacts can see this user's current local time. */
+    suspend fun updateTimeZone(uid: String, timeZoneId: String) {
+        runCatching { usersCollection.document(uid).update("timeZoneId", timeZoneId).await() }
+    }
+
     suspend fun updateProfile(uid: String, name: String, status: String, photoUri: Uri?): Result<Unit> =
         runCatching {
             val updates = mutableMapOf<String, Any>(

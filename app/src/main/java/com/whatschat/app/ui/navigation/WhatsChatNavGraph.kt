@@ -24,6 +24,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.whatschat.app.data.model.Call
 import com.whatschat.app.data.model.CallStatus
 import com.whatschat.app.data.repository.CallRepository
+import com.whatschat.app.data.repository.ChatRepository
 import com.whatschat.app.data.repository.UserRepository
 import com.whatschat.app.data.service.CallListenerService
 import com.whatschat.app.ui.screens.auth.LoginScreen
@@ -33,8 +34,10 @@ import com.whatschat.app.ui.screens.chat.ChatScreen
 import com.whatschat.app.ui.screens.chatlist.ChatListScreen
 import com.whatschat.app.ui.screens.filter.SelfieFilterScreen
 import com.whatschat.app.ui.screens.profile.ProfileScreen
+import com.whatschat.app.ui.screens.qr.QrScannerScreen
 import com.whatschat.app.ui.screens.settings.SettingsScreen
 import kotlinx.coroutines.launch
+import java.util.TimeZone
 
 /** Deep-links straight to an already-ringing call, e.g. from the incoming-call notification's Accept action. */
 data class PendingCallArgs(
@@ -51,6 +54,7 @@ private object Routes {
     const val CHAT_LIST = "chatList"
     const val PROFILE = "profile"
     const val SETTINGS = "settings"
+    const val QR_SCAN = "qrScan"
     const val CHAT = "chat/{chatId}?name={name}&photo={photo}"
     const val CALL = "call/{otherUid}?name={name}&photo={photo}&callId={callId}&isVideo={isVideo}"
     const val FILTERS = "filters/{chatId}"
@@ -74,6 +78,7 @@ fun WhatsChatNavGraph(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val callRepository = remember { CallRepository() }
+    val chatRepository = remember { ChatRepository() }
     val userRepository = remember { UserRepository() }
 
     var currentUid by remember { mutableStateOf(FirebaseAuth.getInstance().currentUser?.uid) }
@@ -84,8 +89,10 @@ fun WhatsChatNavGraph(
         val auth = FirebaseAuth.getInstance()
         val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
             currentUid = firebaseAuth.currentUser?.uid
-            if (firebaseAuth.currentUser != null) {
+            val uid = firebaseAuth.currentUser?.uid
+            if (uid != null) {
                 CallListenerService.start(context)
+                coroutineScope.launch { userRepository.updateTimeZone(uid, TimeZone.getDefault().id) }
             } else {
                 CallListenerService.stop(context)
             }
@@ -189,12 +196,34 @@ fun WhatsChatNavGraph(
                     navController.navigate(Routes.chat(chatId, name, photo))
                 },
                 onOpenProfile = { navController.navigate(Routes.PROFILE) },
-                onOpenSettings = { navController.navigate(Routes.SETTINGS) }
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                onScanQr = { navController.navigate(Routes.QR_SCAN) }
             )
         }
 
         composable(Routes.SETTINGS) {
             SettingsScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(Routes.QR_SCAN) {
+            QrScannerScreen(
+                onScanned = { uid ->
+                    val myUid = FirebaseAuth.getInstance().currentUser?.uid
+                    if (myUid != null) {
+                        coroutineScope.launch {
+                            val user = userRepository.getUser(uid)
+                            val newChatId = chatRepository.getOrCreateChat(myUid, uid)
+                            navController.popBackStack()
+                            navController.navigate(
+                                Routes.chat(newChatId, user?.name ?: "Unknown", user?.photoUrl.orEmpty())
+                            )
+                        }
+                    } else {
+                        navController.popBackStack()
+                    }
+                },
+                onCancel = { navController.popBackStack() }
+            )
         }
 
         composable(

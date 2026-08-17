@@ -2,12 +2,14 @@ package com.whatschat.app.ui.screens.profile
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,10 +31,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.whatschat.app.R
+import com.whatschat.app.data.qr.QrCodeGenerator
 import com.whatschat.app.ui.components.Avatar
 import com.whatschat.app.ui.viewmodel.ProfileViewModel
 
@@ -146,6 +150,27 @@ fun ProfileScreen(
                     .padding(top = 12.dp)
             ) {
                 Text(stringResource(R.string.action_log_out))
+            }
+
+            val uid = user?.uid
+            if (!uid.isNullOrBlank()) {
+                Text(
+                    text = "My QR code",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 32.dp)
+                )
+                Text(
+                    text = "Someone can scan this to jump straight into a chat with you.",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                )
+                val qrBitmap = remember(uid) { QrCodeGenerator.generate(uid) }
+                Image(
+                    bitmap = qrBitmap.asImageBitmap(),
+                    contentDescription = "Your QR code",
+                    modifier = Modifier.size(200.dp)
+                )
             }
         }
     }
