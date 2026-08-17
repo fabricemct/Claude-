@@ -44,6 +44,12 @@ available to produce custom artwork for it.
   "Background call ringing" below
 - A Settings screen (gear icon on the chat list) to switch the app's own
   display language — see "App language setting" below
+- Travel-focused extras: a preferred translation language and auto-translate
+  toggle per contact, a contact's current local time shown in the chat
+  header, photo-to-translated-text (menu/sign OCR), a quick travel
+  phrasebook, pre-downloading languages for offline use, and QR-code
+  quick-connect to jump straight into a chat with someone you just met —
+  see "Travel & multilingual features" below
 
 Not included yet: end-to-end encryption, group chats, status/stories, push
 notification delivery for new *messages* (the FCM token is stored per user,
@@ -251,6 +257,46 @@ timestamp. Tapping it opens a two-item menu:
 
 Both reuse the same on-device ML Kit translation/language-ID and Android
 TextToSpeech pipeline as the composer's translate feature above.
+
+## Travel & multilingual features
+
+A set of features aimed at people traveling and messaging others who don't
+speak their language:
+
+- **Preferred language per contact + auto-translate** — the language icon in
+  a chat header opens "Conversation settings": pick a language for that
+  contact, then flip on "Auto-translate incoming messages" and every text
+  message they send is translated automatically and shown under the
+  original (reusing the same display as the manual per-message translate
+  above), no tapping required. Stored per-uid on the shared `chats/{chatId}`
+  document (`preferredLanguages`/`autoTranslateEnabled` maps), so each
+  participant's own setting is independent of the other's. A small flag
+  shows next to a contact's name in the chat list once a language is set.
+- **Contact's local time** — shown under their name in the chat header
+  (`🕒 14:32`), from a `timeZoneId` on their user profile that's refreshed
+  from the device's own `TimeZone.getDefault()` on every sign-in.
+- **Photo translation** — the scanner icon in the composer: pick a
+  language, photograph a menu/sign/document, and get the translated text
+  back with a "Send to chat" option. Text is extracted on-device with ML
+  Kit's Latin-script text recognizer (`PhotoTextRecognizer.kt`) — free, no
+  cloud call, works offline. Non-Latin scripts (e.g. Japanese, Arabic,
+  Devanagari) aren't recognized by this recognizer.
+- **Quick travel phrases** — inside the Translate menu, "📖 Quick travel
+  phrases" offers a fixed list of common phrases (hello, thank you, where's
+  the bathroom, how much does this cost, etc.), which you then translate
+  into a chosen language with Listen/Send actions.
+- **Download languages for offline use** — a section in Settings lists
+  every language with a download button, so you can pre-fetch ML Kit's
+  translation models before a trip while still on wifi (`VoiceTranslator.downloadForOffline`).
+  Translation already downloads a language automatically on first use, so
+  this is a head start, not a requirement.
+- **QR code quick-connect** — Profile shows "My QR code" (encodes your uid,
+  generated with ZXing — `QrCodeGenerator.kt`); the scan icon on the chat
+  list opens a camera scanner (CameraX + ML Kit barcode scanning,
+  `QrScannerScreen.kt`) that jumps straight into a chat with whoever's code
+  you scanned. Since every registered user already shows up in the chat
+  list automatically, this isn't strictly needed to "become contacts" — its
+  real value is skipping the search when you've just met someone in person.
 
 ## Background call ringing
 
