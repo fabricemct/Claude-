@@ -44,6 +44,8 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -73,6 +75,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -140,6 +143,15 @@ fun ChatScreen(
     var isListening by remember { mutableStateOf(false) }
     var translating by remember { mutableStateOf(false) }
     var translateError by remember { mutableStateOf<String?>(null) }
+
+    // Per-message translate/listen: tapping the small icon on a text message
+    // shows a "Translate" (pick a language, translation appears under the
+    // original) and "Listen" (read the message aloud in its own language)
+    // menu, independent of the composer's own translate flow above.
+    var messageTranslations by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var translateTargetMessageId by remember { mutableStateOf<String?>(null) }
+    var showMessageLanguagePicker by remember { mutableStateOf(false) }
+    var messageActionError by remember { mutableStateOf<String?>(null) }
 
     val voiceRecorder = remember { VoiceRecorder() }
     var isRecording by remember { mutableStateOf(false) }
@@ -376,6 +388,48 @@ fun ChatScreen(
         )
     }
 
+    if (showMessageLanguagePicker) {
+        AlertDialog(
+            onDismissRequest = { showMessageLanguagePicker = false },
+            title = { Text("Translate this message") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    AppLanguage.entries.forEach { language ->
+                        TextButton(onClick = {
+                            val msgId = translateTargetMessageId
+                            val original = messages.firstOrNull { it.messageId == msgId }?.text
+                            showMessageLanguagePicker = false
+                            if (msgId != null && original != null) {
+                                scope.launch {
+                                    runCatching { voiceTranslator.translate(original, language) }
+                                        .onSuccess { messageTranslations = messageTranslations + (msgId to it) }
+                                        .onFailure { messageActionError = it.message ?: "Something went wrong." }
+                                }
+                            }
+                        }) {
+                            Text("${language.flag} ${language.label}")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showMessageLanguagePicker = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (messageActionError != null) {
+        AlertDialog(
+            onDismissRequest = { messageActionError = null },
+            title = { Text("Couldn't do that") },
+            text = { Text(messageActionError.orEmpty()) },
+            confirmButton = {
+                TextButton(onClick = { messageActionError = null }) { Text("OK") }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             if (inSelectionMode) {
@@ -563,8 +617,19 @@ fun ChatScreen(
                     MessageBubble(
                         message = message,
                         isOwn = isOwn,
+                        translatedText = messageTranslations[message.messageId],
                         onLongPress = { if (isOwn) toggleSelection(message.messageId) },
-                        onTap = { if (inSelectionMode && isOwn) toggleSelection(message.messageId) }
+                        onTap = { if (inSelectionMode && isOwn) toggleSelection(message.messageId) },
+                        onTranslateClick = {
+                            translateTargetMessageId = message.messageId
+                            showMessageLanguagePicker = true
+                        },
+                        onListenClick = {
+                            scope.launch {
+                                runCatching { voiceTranslator.speakNow(message.text) }
+                                    .onFailure { messageActionError = it.message ?: "Something went wrong." }
+                            }
+                        }
                     )
                 }
             }
@@ -574,7 +639,15 @@ fun ChatScreen(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MessageBubble(message: Message, isOwn: Boolean, onLongPress: () -> Unit, onTap: () -> Unit) {
+private fun MessageBubble(
+    message: Message,
+    isOwn: Boolean,
+    translatedText: String?,
+    onLongPress: () -> Unit,
+    onTap: () -> Unit,
+    onTranslateClick: () -> Unit,
+    onListenClick: () -> Unit
+) {
     val alignment = if (isOwn) Alignment.End else Alignment.Start
 
     if (message.type == MessageType.STICKER) {
@@ -618,17 +691,67 @@ private fun MessageBubble(message: Message, isOwn: Boolean, onLongPress: () -> U
                             audioUrl = message.audioUrl,
                             durationMs = message.audioDurationMs
                         )
-                        MessageType.TEXT -> Text(text = message.text, color = WaBubbleText)
+                        MessageType.TEXT -> {
+                            Text(text = message.text, color = WaBubbleText)
+                            if (translatedText != null) {
+                                Text(
+                                    text = translatedText,
+                                    color = WaBubbleText,
+                                    fontStyle = FontStyle.Italic,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                        }
                         MessageType.STICKER -> Unit // handled by the early return above
                     }
-                    Text(
-                        text = formatTime(message.timestamp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = WaBubbleTimestamp,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        // Aligned as a whole (not filling the bubble's width) so short
+                        // messages keep a compact bubble instead of always stretching wide.
                         modifier = Modifier
                             .align(Alignment.End)
                             .padding(top = 4.dp)
-                    )
+                    ) {
+                        if (message.type == MessageType.TEXT) {
+                            var menuExpanded by remember { mutableStateOf(false) }
+                            Box {
+                                IconButton(
+                                    onClick = { menuExpanded = true },
+                                    modifier = Modifier.size(20.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Translate,
+                                        contentDescription = "Translate or listen to this message",
+                                        tint = WaBubbleTimestamp,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("Translate") },
+                                        onClick = {
+                                            menuExpanded = false
+                                            onTranslateClick()
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Listen") },
+                                        onClick = {
+                                            menuExpanded = false
+                                            onListenClick()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            text = formatTime(message.timestamp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = WaBubbleTimestamp
+                        )
+                    }
                 }
             }
         }

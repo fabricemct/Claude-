@@ -1,7 +1,12 @@
 # WhatsChat
 
 A native Android messaging app (Kotlin + Jetpack Compose) inspired by WhatsApp,
-backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging).
+backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging), built
+around real-time chat plus a set of on-device translation features aimed at
+talking across languages — e.g. while traveling. The app icon (a chat bubble
+with a paper plane inside, `drawable/ic_launcher_foreground.xml`) reflects
+that: a hand-drawn vector icon, since no image-generation tooling was
+available to produce custom artwork for it.
 
 ## Features (MVP)
 
@@ -30,7 +35,10 @@ backed by Firebase (Authentication, Firestore, Storage, Cloud Messaging).
   stickers / photo / translate / voice) so the message field gets the full
   width; every icon in the app has a long-press tooltip explaining what it does
 - Translate: type or speak a message, pick a language, and send it either as
-  a voice note or as text in that language — see "Voice translation" below
+  a voice note or as text in that language (31 languages) — see "Voice
+  translation" below
+- Every message has a small icon to translate it in place or have it read
+  aloud — see "Translate/listen to a received message" below
 - Calls ring even when the app isn't open on screen, via a background
   listener service with a full-screen incoming-call notification — see
   "Background call ringing" below
@@ -178,8 +186,11 @@ Either way you can retake or send the result as a normal image message.
 ## Voice translation
 
 The translate icon next to the message field opens a choice of three modes,
-then a language picker (English, French, Portuguese, German, Spanish,
-Italian):
+then a language picker (31 languages, in `AppLanguage.kt` — English, French,
+Portuguese, German, Spanish, Italian, Arabic, Chinese, Japanese, Korean,
+Russian, Dutch, Turkish, Polish, Hindi, Vietnamese, Thai, Swedish, Greek,
+Ukrainian, Hebrew, Indonesian, Romanian, Czech, Danish, Norwegian,
+Hungarian, Finnish, Persian, Urdu, and Filipino):
 
 - **⌨️ Type text → send as voice** — translate what's currently typed in the
   message field and send it as a spoken voice note (only enabled once
@@ -221,6 +232,21 @@ per-request cost.
   on virtually all phones with Google Play Services) and asks for microphone
   access the first time either "Speak" mode is used, separately from the
   permission prompt for plain voice messages.
+
+### Translate/listen to a received message
+
+Every text message (yours or theirs) has a small translate icon next to its
+timestamp. Tapping it opens a two-item menu:
+
+- **Translate** — pick a language and the translation appears right under
+  the original text, in italics, inside that same bubble (translations are
+  kept in memory per message; they reset if you leave and reopen the chat).
+- **Listen** — reads the message aloud immediately through the speaker, in
+  whatever language it detects the message was written in (`VoiceTranslator.speakNow`)
+  — no language picker needed, no file written, just instant playback.
+
+Both reuse the same on-device ML Kit translation/language-ID and Android
+TextToSpeech pipeline as the composer's translate feature above.
 
 ## Background call ringing
 

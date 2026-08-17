@@ -4,16 +4,15 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Chat bubble, same outline as before. -->
     <path
         android:fillColor="#25D366"
         android:pathData="M54,24c-16.57,0 -30,13.43 -30,30c0,5.7 1.59,11.03 4.35,15.57L24,84l14.83,-4.24C43.16,82.32 48.35,84 54,84c16.57,0 30,-13.43 30,-30S70.57,24 54,24z" />
+    <!-- Paper-plane inside the bubble (two tones for a folded-paper look) — chat + travel/send. -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M44,48m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
+        android:pathData="M70,38 L40,54 L54,50 Z" />
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M54,48m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M64,48m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
+        android:fillColor="#E3F6EE"
+        android:pathData="M70,38 L54,50 L46,70 Z" />
 </vector>

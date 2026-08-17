@@ -44,6 +44,29 @@ class VoiceTranslator(private val context: Context) {
 
     /** Synthesizes [text] as speech in [locale] and writes it to [outputFile] (WAV). */
     suspend fun speakToFile(text: String, locale: Locale, outputFile: File): Unit =
+        withReadyEngine(locale) { engine, utteranceId ->
+            engine.synthesizeToFile(text, Bundle(), outputFile, utteranceId)
+        }
+
+    /**
+     * Reads [text] aloud through the speaker immediately (no file involved) —
+     * used for "listen to this message". If [locale] isn't given, the
+     * message's own language is auto-detected and used, so it's read in
+     * whatever language it was actually written in rather than [AppLanguage]'s
+     * currently selected target.
+     */
+    suspend fun speakNow(text: String, locale: Locale? = null) {
+        val actualLocale = locale ?: run {
+            val code = identifyLanguage(text)
+            AppLanguage.entries.firstOrNull { it.mlKitCode == code }?.ttsLocale ?: Locale.forLanguageTag(code)
+        }
+        withReadyEngine(actualLocale) { engine, utteranceId ->
+            engine.speak(text, TextToSpeech.QUEUE_FLUSH, Bundle(), utteranceId)
+        }
+    }
+
+    /** Boots a [TextToSpeech] engine, sets [locale], then runs [synthesize] (either speakNow or synthesizeToFile), shutting the engine down once it's done. */
+    private suspend fun withReadyEngine(locale: Locale, synthesize: (TextToSpeech, String) -> Int): Unit =
         suspendCancellableCoroutine { cont ->
             var tts: TextToSpeech? = null
             tts = TextToSpeech(context) { status ->
@@ -64,8 +87,8 @@ class VoiceTranslator(private val context: Context) {
                     return@TextToSpeech
                 }
 
-                // A bit slower than the device default so a translated phrase is easier
-                // to catch on first listen, especially in an unfamiliar language.
+                // A bit slower than the device default so a phrase is easier to
+                // catch on first listen, especially in an unfamiliar language.
                 engine.setSpeechRate(SPEECH_RATE)
 
                 engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
@@ -86,8 +109,7 @@ class VoiceTranslator(private val context: Context) {
                 })
 
                 val utteranceId = "whatschat_${System.currentTimeMillis()}"
-                val synthesisResult = engine.synthesizeToFile(text, Bundle(), outputFile, utteranceId)
-                if (synthesisResult != TextToSpeech.SUCCESS) {
+                if (synthesize(engine, utteranceId) != TextToSpeech.SUCCESS) {
                     engine.shutdown()
                     cont.resumeWithException(IllegalStateException("Could not start speech synthesis"))
                 }
