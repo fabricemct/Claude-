@@ -2,10 +2,13 @@ package com.whatschat.app.ui.screens.chat
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.media.MediaPlayer
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
@@ -76,6 +79,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
@@ -91,6 +95,7 @@ import com.whatschat.app.data.audio.WavFile
 import com.whatschat.app.data.model.Message
 import com.whatschat.app.data.model.MessageType
 import com.whatschat.app.data.ocr.PhotoTextRecognizer
+import com.whatschat.app.data.ocr.TranslatedImageComposer
 import com.whatschat.app.data.translate.AppLanguage
 import com.whatschat.app.data.translate.VoiceTranslator
 import com.whatschat.app.ui.components.COMMON_EMOJIS
@@ -104,6 +109,7 @@ import com.whatschat.app.ui.theme.WaBubbleTimestamp
 import com.whatschat.app.ui.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -114,12 +120,62 @@ import com.whatschat.app.data.translate.SpeechToText
 /** How the "Translate" flow gets its input text and sends its output. */
 private enum class TranslateMode { TYPE_TO_VOICE, SPEAK_TO_VOICE, SPEAK_TO_TEXT }
 
-/** Common phrases useful when traveling, offered from the "Quick travel phrases" picker. */
-private val TRAVEL_PHRASES = listOf(
-    "Hello", "Thank you", "Please", "Yes", "No", "Excuse me",
-    "Where is the bathroom?", "How much does this cost?",
-    "I don't understand", "Can you help me?", "I need a doctor",
-    "Where is the nearest hotel?"
+/** Common phrases useful when traveling, grouped by topic for the "Quick travel phrases" picker. */
+private val TRAVEL_PHRASES: Map<String, List<String>> = linkedMapOf(
+    "Basics" to listOf(
+        "Hello", "Good morning", "Good evening", "Goodbye", "Thank you",
+        "Thank you very much", "You're welcome", "Please", "Yes", "No",
+        "Excuse me", "Sorry", "My name is...", "What is your name?",
+        "Nice to meet you", "Do you speak English?", "I don't understand",
+        "Can you repeat that, please?", "Can you speak more slowly?",
+        "Can you help me?", "I don't speak [language]"
+    ),
+    "Directions" to listOf(
+        "Where is the bathroom?", "Where is the nearest hotel?",
+        "Where is the train station?", "Where is the bus stop?",
+        "How do I get to the city center?", "Is it far from here?",
+        "Can you show me on the map?", "Turn left", "Turn right",
+        "Go straight ahead", "I am lost", "Where am I?"
+    ),
+    "Transportation" to listOf(
+        "One ticket, please", "Two tickets, please", "How much is a ticket?",
+        "What time does it leave?", "What time does it arrive?",
+        "Is this seat taken?", "Where can I get a taxi?",
+        "Please take me to this address", "Please stop here",
+        "How much is the fare?", "Where can I rent a car?"
+    ),
+    "Accommodation" to listOf(
+        "I have a reservation", "Do you have any rooms available?",
+        "How much is a room per night?", "What time is check-out?",
+        "Can I have the Wi-Fi password?", "The room key, please",
+        "Can you call me a taxi?", "Is breakfast included?"
+    ),
+    "Food & Dining" to listOf(
+        "A table for two, please", "Can I see the menu?",
+        "What do you recommend?", "I am allergic to...",
+        "I am vegetarian", "I am vegan", "Water, please",
+        "The check, please", "It was delicious", "Cheers!",
+        "Can I get this to go?", "Is there a vegetarian option?"
+    ),
+    "Shopping" to listOf(
+        "How much does this cost?", "That's too expensive",
+        "Can you lower the price?", "Do you accept credit cards?",
+        "I'm just looking, thank you", "Can I try this on?",
+        "Do you have a smaller size?", "Do you have a bigger size?",
+        "I'll take it", "Can I have a receipt?"
+    ),
+    "Emergencies & Health" to listOf(
+        "I need a doctor", "Call an ambulance", "Call the police",
+        "It's an emergency", "I feel sick", "I lost my passport",
+        "I lost my wallet", "Where is the nearest hospital?",
+        "Where is the nearest pharmacy?", "I need help",
+        "I am allergic to penicillin", "My phone was stolen"
+    ),
+    "Numbers & Time" to listOf(
+        "What time is it?", "One", "Two", "Three", "Ten", "Twenty",
+        "One hundred", "Today", "Tomorrow", "Yesterday",
+        "What day is it today?"
+    )
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -217,7 +273,7 @@ fun ChatScreen(
     var showPhotoTranslateLanguagePicker by remember { mutableStateOf(false) }
     var photoTranslateLanguage by remember { mutableStateOf<AppLanguage?>(null) }
     var photoTranslateLoading by remember { mutableStateOf(false) }
-    var photoTranslateResult by remember { mutableStateOf<String?>(null) }
+    var photoTranslateResultBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var photoTranslateError by remember { mutableStateOf<String?>(null) }
     var cameraGranted by remember {
         mutableStateOf(
@@ -233,12 +289,15 @@ fun ChatScreen(
             photoTranslateLoading = true
             scope.launch {
                 runCatching {
-                    val recognized = PhotoTextRecognizer.recognize(bitmap)
-                    if (recognized.isBlank()) {
+                    val blocks = PhotoTextRecognizer.recognizeBlocks(bitmap)
+                    if (blocks.isEmpty()) {
                         throw IllegalStateException("No text found in the photo — try getting closer or a clearer angle.")
                     }
-                    voiceTranslator.translate(recognized, language)
-                }.onSuccess { photoTranslateResult = it }
+                    val translatedBlocks = blocks.map { block ->
+                        block.boundingBox to voiceTranslator.translate(block.text, language)
+                    }
+                    TranslatedImageComposer.compose(bitmap, translatedBlocks)
+                }.onSuccess { photoTranslateResultBitmap = it }
                     .onFailure { photoTranslateError = it.message ?: "Something went wrong." }
                 photoTranslateLoading = false
             }
@@ -436,13 +495,21 @@ fun ChatScreen(
             title = { Text("Quick travel phrases") },
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    TRAVEL_PHRASES.forEach { phrase ->
-                        TextButton(onClick = {
-                            phrasebookPhrase = phrase
-                            showPhrasebook = false
-                            showPhrasebookLanguagePicker = true
-                        }) {
-                            Text(phrase)
+                    TRAVEL_PHRASES.forEach { (category, phrases) ->
+                        Text(
+                            text = category,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                        )
+                        phrases.forEach { phrase ->
+                            TextButton(onClick = {
+                                phrasebookPhrase = phrase
+                                showPhrasebook = false
+                                showPhrasebookLanguagePicker = true
+                            }) {
+                                Text(phrase)
+                            }
                         }
                     }
                 }
@@ -746,15 +813,16 @@ fun ChatScreen(
         )
     }
 
-    if (photoTranslateLoading || photoTranslateResult != null || photoTranslateError != null) {
+    if (photoTranslateLoading || photoTranslateResultBitmap != null || photoTranslateError != null) {
+        val resultBitmap = photoTranslateResultBitmap
         AlertDialog(
             onDismissRequest = {
                 if (!photoTranslateLoading) {
-                    photoTranslateResult = null
+                    photoTranslateResultBitmap = null
                     photoTranslateError = null
                 }
             },
-            title = { Text(if (photoTranslateError != null) "Couldn't translate" else "Translated text") },
+            title = { Text(if (photoTranslateError != null) "Couldn't translate" else "Translated photo") },
             text = {
                 when {
                     photoTranslateLoading -> Row(verticalAlignment = Alignment.CenterVertically) {
@@ -762,21 +830,29 @@ fun ChatScreen(
                         Text("Reading and translating...", modifier = Modifier.padding(start = 12.dp))
                     }
                     photoTranslateError != null -> Text(photoTranslateError.orEmpty())
-                    else -> Text(photoTranslateResult.orEmpty())
+                    resultBitmap != null -> Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        Image(
+                            bitmap = resultBitmap.asImageBitmap(),
+                            contentDescription = "Photo with translated text",
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             },
             confirmButton = {
-                if (photoTranslateResult != null) {
+                if (resultBitmap != null) {
                     TextButton(onClick = {
-                        viewModel.sendText(photoTranslateResult.orEmpty())
-                        photoTranslateResult = null
+                        val file = File(context.cacheDir, "photo_translate_${System.currentTimeMillis()}.jpg")
+                        FileOutputStream(file).use { out -> resultBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out) }
+                        viewModel.sendImage(Uri.fromFile(file))
+                        photoTranslateResultBitmap = null
                     }) { Text("Send to chat") }
                 }
             },
             dismissButton = {
                 if (!photoTranslateLoading) {
                     TextButton(onClick = {
-                        photoTranslateResult = null
+                        photoTranslateResultBitmap = null
                         photoTranslateError = null
                     }) { Text("Close") }
                 }

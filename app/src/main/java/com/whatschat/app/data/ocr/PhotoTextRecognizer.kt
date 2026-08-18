@@ -1,12 +1,16 @@
 package com.whatschat.app.data.ocr
 
 import android.graphics.Bitmap
+import android.graphics.Rect
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+
+/** One block of recognized text and where it sits in the source photo. */
+data class RecognizedTextBlock(val text: String, val boundingBox: Rect)
 
 /**
  * Extracts text from a photo (a menu, a sign, a document) entirely
@@ -16,12 +20,22 @@ import kotlin.coroutines.resumeWithException
  * need ML Kit's separate script-specific recognizers, not included here.
  */
 object PhotoTextRecognizer {
-    suspend fun recognize(bitmap: Bitmap): String {
+    suspend fun recognize(bitmap: Bitmap): String =
+        recognizeBlocks(bitmap).joinToString("\n") { it.text }
+
+    /** Same recognition, but keeping each block's position so a translation can be drawn back over it. */
+    suspend fun recognizeBlocks(bitmap: Bitmap): List<RecognizedTextBlock> {
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         val inputImage = InputImage.fromBitmap(bitmap, 0)
         return suspendCancellableCoroutine { cont ->
             recognizer.process(inputImage)
-                .addOnSuccessListener { result -> cont.resume(result.text) }
+                .addOnSuccessListener { result ->
+                    val blocks = result.textBlocks.mapNotNull { block ->
+                        val box = block.boundingBox
+                        if (box != null && block.text.isNotBlank()) RecognizedTextBlock(block.text, box) else null
+                    }
+                    cont.resume(blocks)
+                }
                 .addOnFailureListener { cont.resumeWithException(it) }
         }
     }
