@@ -174,6 +174,7 @@ class WebRtcClient(
     fun createOffer(onCreated: (SessionDescription) -> Unit) {
         peerConnection?.createOffer(object : SdpObserverAdapter() {
             override fun onCreateSuccess(sdp: SessionDescription) {
+                logVideoNegotiation("local offer", sdp)
                 peerConnection?.setLocalDescription(SdpObserverAdapter(), sdp)
                 onCreated(sdp)
             }
@@ -183,6 +184,7 @@ class WebRtcClient(
     fun createAnswer(onCreated: (SessionDescription) -> Unit) {
         peerConnection?.createAnswer(object : SdpObserverAdapter() {
             override fun onCreateSuccess(sdp: SessionDescription) {
+                logVideoNegotiation("local answer", sdp)
                 peerConnection?.setLocalDescription(SdpObserverAdapter(), sdp)
                 onCreated(sdp)
             }
@@ -190,7 +192,29 @@ class WebRtcClient(
     }
 
     fun setRemoteDescription(sdp: SessionDescription) {
-        peerConnection?.setRemoteDescription(SdpObserverAdapter(), sdp)
+        logVideoNegotiation("remote ${sdp.type}", sdp)
+        peerConnection?.setRemoteDescription(object : SdpObserverAdapter() {
+            override fun onSetSuccess() {
+                peerConnection?.transceivers?.forEach { t ->
+                    Log.d(
+                        TAG,
+                        "transceiver mid=${t.mid} media=${t.mediaType} " +
+                            "direction=${t.direction} currentDirection=${t.currentDirection}"
+                    )
+                }
+            }
+        }, sdp)
+    }
+
+    /** Logs whether a video m-line is present and what direction it negotiated — the only
+     *  way (without a debugger) to tell an SDP-negotiation failure apart from a rendering one. */
+    private fun logVideoNegotiation(label: String, sdp: SessionDescription) {
+        val hasVideo = sdp.description.contains("m=video")
+        val directionLine = sdp.description
+            .lineSequence()
+            .dropWhile { !it.startsWith("m=video") }
+            .firstOrNull { it.startsWith("a=sendrecv") || it.startsWith("a=sendonly") || it.startsWith("a=recvonly") || it.startsWith("a=inactive") }
+        Log.d(TAG, "$label: hasVideoLine=$hasVideo direction=${directionLine ?: "none"}")
     }
 
     fun addIceCandidate(candidate: IceCandidate) {
