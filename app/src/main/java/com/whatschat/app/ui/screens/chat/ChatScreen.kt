@@ -248,7 +248,7 @@ fun ChatScreen(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         cameraGranted = granted
-        if (granted) photoTranslateCameraLauncher.launch()
+        if (granted) photoTranslateCameraLauncher.launch(null)
     }
 
     val voiceRecorder = remember { VoiceRecorder() }
@@ -729,7 +729,7 @@ fun ChatScreen(
                             photoTranslateLanguage = language
                             showPhotoTranslateLanguagePicker = false
                             if (cameraGranted) {
-                                photoTranslateCameraLauncher.launch()
+                                photoTranslateCameraLauncher.launch(null)
                             } else {
                                 cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                             }
