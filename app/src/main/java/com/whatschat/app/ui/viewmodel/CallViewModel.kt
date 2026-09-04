@@ -1,6 +1,8 @@
 package com.whatschat.app.ui.viewmodel
 
 import android.app.Application
+import android.media.AudioManager
+import android.media.ToneGenerator
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -60,6 +62,29 @@ class CallViewModel(
     private val localRole = if (isCaller) "callerCandidates" else "calleeCandidates"
     private val remoteRole = if (isCaller) "calleeCandidates" else "callerCandidates"
 
+    // The caller hears nothing at all while the other side's phone is ringing unless we
+    // generate this ourselves — WebRTC's audio channel stays silent until the call is
+    // actually answered, so there's no real audio to carry a ringback sound.
+    private var ringbackTone: ToneGenerator? = null
+
+    private fun startRingback() {
+        if (!isCaller) return
+        runCatching {
+            ToneGenerator(AudioManager.STREAM_VOICE_CALL, ToneGenerator.MAX_VOLUME).also {
+                it.startTone(ToneGenerator.TONE_SUP_RINGTONE)
+                ringbackTone = it
+            }
+        }
+    }
+
+    private fun stopRingback() {
+        ringbackTone?.let { tone ->
+            runCatching { tone.stopTone() }
+            runCatching { tone.release() }
+        }
+        ringbackTone = null
+    }
+
     private val webRtcClient = WebRtcClient(
         application,
         isVideoCall,
@@ -70,10 +95,12 @@ class CallViewModel(
             }
 
             override fun onConnected() {
+                stopRingback()
                 _phase.value = CallPhase.CONNECTED
             }
 
             override fun onDisconnected() {
+                stopRingback()
                 if (_phase.value != CallPhase.ENDED) _phase.value = CallPhase.ENDED
             }
 
@@ -89,6 +116,7 @@ class CallViewModel(
     init {
         webRtcClient.createPeerConnection()
         if (isCaller) {
+            startRingback()
             viewModelScope.launch {
                 val id = callRepository.createCall(myUid, otherUid, isVideoCall)
                 callId = id
@@ -124,6 +152,7 @@ class CallViewModel(
                 }
 
                 if (current.status == CallStatus.DECLINED.name || current.status == CallStatus.ENDED.name) {
+                    stopRingback()
                     _phase.value = CallPhase.ENDED
                 }
             }
@@ -169,6 +198,7 @@ class CallViewModel(
     }
 
     fun hangUp() {
+        stopRingback()
         val id = callId
         if (id != null) {
             viewModelScope.launch { callRepository.updateStatus(id, CallStatus.ENDED) }
@@ -178,6 +208,7 @@ class CallViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        stopRingback()
         webRtcClient.close()
     }
 

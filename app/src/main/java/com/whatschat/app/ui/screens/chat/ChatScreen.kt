@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -81,10 +82,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -368,6 +372,10 @@ fun ChatScreen(
     var selectedMessageIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     val inSelectionMode = selectedMessageIds.isNotEmpty()
+
+    // Tapping an image message (a photo, or a translated-photo result) opens it full-screen
+    // instead of doing nothing, which is all that happened before.
+    var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
 
     fun toggleSelection(messageId: String) {
         selectedMessageIds =
@@ -1067,7 +1075,13 @@ fun ChatScreen(
                         isOwn = isOwn,
                         translatedText = messageTranslations[message.messageId],
                         onLongPress = { if (isOwn) toggleSelection(message.messageId) },
-                        onTap = { if (inSelectionMode && isOwn) toggleSelection(message.messageId) },
+                        onTap = {
+                            when {
+                                inSelectionMode && isOwn -> toggleSelection(message.messageId)
+                                message.type == MessageType.IMAGE && message.imageUrl.isNotBlank() ->
+                                    fullScreenImageUrl = message.imageUrl
+                            }
+                        },
                         onTranslateClick = {
                             translateTargetMessageId = message.messageId
                             showMessageLanguagePicker = true
@@ -1079,6 +1093,36 @@ fun ChatScreen(
                             }
                         }
                     )
+                }
+            }
+        }
+    }
+
+    val viewedImageUrl = fullScreenImageUrl
+    if (viewedImageUrl != null) {
+        Dialog(
+            onDismissRequest = { fullScreenImageUrl = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+                    .clickable(onClick = { fullScreenImageUrl = null })
+            ) {
+                AsyncImage(
+                    model = viewedImageUrl,
+                    contentDescription = "Full-screen image",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
+                IconButton(
+                    onClick = { fullScreenImageUrl = null },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp)
+                ) {
+                    Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White)
                 }
             }
         }
