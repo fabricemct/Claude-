@@ -32,21 +32,21 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.TheaterComedy
-import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.rounded.DocumentScanner
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
@@ -931,7 +931,7 @@ fun ChatScreen(
                             onClick = { onOpenFilters(chatId) }
                         )
                         TooltipIconButton(
-                            icon = Icons.Filled.Language,
+                            icon = Icons.Rounded.Public,
                             description = "Conversation settings: preferred language, auto-translate",
                             onClick = { showConversationSettings = true }
                         )
@@ -967,13 +967,13 @@ fun ChatScreen(
                             tint = Color(0xFF2196F3)
                         )
                         TooltipIconButton(
-                            icon = Icons.Filled.Translate,
+                            icon = Icons.Rounded.Translate,
                             description = "Translate (type or speak, send as voice or text)",
                             onClick = { showTranslateModeChooser = true },
                             tint = Color(0xFF4CAF50)
                         )
                         TooltipIconButton(
-                            icon = Icons.Filled.DocumentScanner,
+                            icon = Icons.Rounded.DocumentScanner,
                             description = "Translate text from a photo (menu, sign, document)",
                             onClick = { showPhotoTranslateLanguagePicker = true },
                             tint = Color(0xFF00ACC1)
@@ -1214,7 +1214,7 @@ private fun MessageBubble(
                                     modifier = Modifier.size(20.dp)
                                 ) {
                                     Icon(
-                                        Icons.Filled.Translate,
+                                        Icons.Rounded.Translate,
                                         contentDescription = "Translate or listen to this message",
                                         tint = WaBubbleTimestamp,
                                         modifier = Modifier.size(14.dp)
