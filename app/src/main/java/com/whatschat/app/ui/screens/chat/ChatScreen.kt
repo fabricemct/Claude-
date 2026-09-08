@@ -2,13 +2,10 @@ package com.whatschat.app.ui.screens.chat
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import android.media.MediaPlayer
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -80,7 +77,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -99,7 +95,6 @@ import com.whatschat.app.data.audio.WavFile
 import com.whatschat.app.data.model.Message
 import com.whatschat.app.data.model.MessageType
 import com.whatschat.app.data.ocr.PhotoTextRecognizer
-import com.whatschat.app.data.ocr.TranslatedImageComposer
 import com.whatschat.app.data.translate.AppLanguage
 import com.whatschat.app.data.translate.VoiceTranslator
 import com.whatschat.app.ui.components.COMMON_EMOJIS
@@ -113,7 +108,6 @@ import com.whatschat.app.ui.theme.WaBubbleTimestamp
 import com.whatschat.app.ui.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
 import java.io.File
-import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -277,7 +271,7 @@ fun ChatScreen(
     var showPhotoTranslateLanguagePicker by remember { mutableStateOf(false) }
     var photoTranslateLanguage by remember { mutableStateOf<AppLanguage?>(null) }
     var photoTranslateLoading by remember { mutableStateOf(false) }
-    var photoTranslateResultBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var photoTranslateResult by remember { mutableStateOf<String?>(null) }
     var photoTranslateError by remember { mutableStateOf<String?>(null) }
     var cameraGranted by remember {
         mutableStateOf(
@@ -293,15 +287,16 @@ fun ChatScreen(
             photoTranslateLoading = true
             scope.launch {
                 runCatching {
-                    val blocks = PhotoTextRecognizer.recognizeBlocks(bitmap)
-                    if (blocks.isEmpty()) {
+                    val lines = PhotoTextRecognizer.recognizeBlocks(bitmap)
+                    if (lines.isEmpty()) {
                         throw IllegalStateException("No text found in the photo — try getting closer or a clearer angle.")
                     }
-                    val translatedBlocks = blocks.map { block ->
-                        block.boundingBox to voiceTranslator.translate(block.text, language)
-                    }
-                    TranslatedImageComposer.compose(bitmap, translatedBlocks)
-                }.onSuccess { photoTranslateResultBitmap = it }
+                    // Translating and showing plain text (one line per recognized line, in
+                    // reading order) instead of redrawing it over the photo — trying to fit
+                    // a translation back into the original text's box on a real menu (mixed
+                    // fonts, prices, columns) produced an unreadable mess.
+                    lines.joinToString("\n") { line -> voiceTranslator.translate(line.text, language) }
+                }.onSuccess { photoTranslateResult = it }
                     .onFailure { photoTranslateError = it.message ?: "Something went wrong." }
                 photoTranslateLoading = false
             }
@@ -821,16 +816,15 @@ fun ChatScreen(
         )
     }
 
-    if (photoTranslateLoading || photoTranslateResultBitmap != null || photoTranslateError != null) {
-        val resultBitmap = photoTranslateResultBitmap
+    if (photoTranslateLoading || photoTranslateResult != null || photoTranslateError != null) {
         AlertDialog(
             onDismissRequest = {
                 if (!photoTranslateLoading) {
-                    photoTranslateResultBitmap = null
+                    photoTranslateResult = null
                     photoTranslateError = null
                 }
             },
-            title = { Text(if (photoTranslateError != null) "Couldn't translate" else "Translated photo") },
+            title = { Text(if (photoTranslateError != null) "Couldn't translate" else "Translated text") },
             text = {
                 when {
                     photoTranslateLoading -> Row(verticalAlignment = Alignment.CenterVertically) {
@@ -838,29 +832,24 @@ fun ChatScreen(
                         Text("Reading and translating...", modifier = Modifier.padding(start = 12.dp))
                     }
                     photoTranslateError != null -> Text(photoTranslateError.orEmpty())
-                    resultBitmap != null -> Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                        Image(
-                            bitmap = resultBitmap.asImageBitmap(),
-                            contentDescription = "Photo with translated text",
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
+                    else -> Text(
+                        photoTranslateResult.orEmpty(),
+                        modifier = Modifier.verticalScroll(rememberScrollState())
+                    )
                 }
             },
             confirmButton = {
-                if (resultBitmap != null) {
+                if (photoTranslateResult != null) {
                     TextButton(onClick = {
-                        val file = File(context.cacheDir, "photo_translate_${System.currentTimeMillis()}.jpg")
-                        FileOutputStream(file).use { out -> resultBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out) }
-                        viewModel.sendImage(Uri.fromFile(file))
-                        photoTranslateResultBitmap = null
+                        viewModel.sendText(photoTranslateResult.orEmpty())
+                        photoTranslateResult = null
                     }) { Text("Send to chat") }
                 }
             },
             dismissButton = {
                 if (!photoTranslateLoading) {
                     TextButton(onClick = {
-                        photoTranslateResultBitmap = null
+                        photoTranslateResult = null
                         photoTranslateError = null
                     }) { Text("Close") }
                 }
