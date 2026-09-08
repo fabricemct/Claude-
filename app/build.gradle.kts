@@ -81,10 +81,13 @@ dependencies {
 
     // Firebase
     implementation(platform("com.google.firebase:firebase-bom:34.18.0"))
-    implementation("com.google.firebase:firebase-auth-ktx")
-    implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-storage-ktx")
-    implementation("com.google.firebase:firebase-messaging-ktx")
+    // Firebase stopped releasing separate "-ktx" modules in mid-2025 and dropped them
+    // from the BoM entirely — the Kotlin extension functions now live in these same,
+    // un-suffixed artifacts, so nothing about how the code calls them changes.
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-firestore")
+    implementation("com.google.firebase:firebase-storage")
+    implementation("com.google.firebase:firebase-messaging")
     // Gemini access for photo-menu translation, called straight from the app (no separate
     // backend needed) — kept safe from key-extraction because there's no API key embedded
     // at all; access is gated by App Check (below) instead.
