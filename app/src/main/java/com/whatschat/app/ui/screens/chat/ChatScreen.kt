@@ -94,7 +94,7 @@ import com.whatschat.app.data.audio.VoiceRecorder
 import com.whatschat.app.data.audio.WavFile
 import com.whatschat.app.data.model.Message
 import com.whatschat.app.data.model.MessageType
-import com.whatschat.app.data.ocr.PhotoTextRecognizer
+import com.whatschat.app.data.ai.GeminiPhotoTranslator
 import com.whatschat.app.data.translate.AppLanguage
 import com.whatschat.app.data.translate.VoiceTranslator
 import com.whatschat.app.ui.components.COMMON_EMOJIS
@@ -286,18 +286,11 @@ fun ChatScreen(
         if (bitmap != null && language != null) {
             photoTranslateLoading = true
             scope.launch {
-                runCatching {
-                    val lines = PhotoTextRecognizer.recognizeBlocks(bitmap)
-                    if (lines.isEmpty()) {
-                        throw IllegalStateException("No text found in the photo — try getting closer or a clearer angle.")
-                    }
-                    // Translating and showing plain text (one line per recognized line, in
-                    // reading order) instead of redrawing it over the photo — trying to fit
-                    // a translation back into the original text's box on a real menu (mixed
-                    // fonts, prices, columns) produced an unreadable mess.
-                    val translatedLines = lines.map { line -> voiceTranslator.translate(line.text, language) }
-                    translatedLines.joinToString("\n")
-                }.onSuccess { photoTranslateResult = it }
+                // On-device OCR only reliably read a handful of words off a real restaurant
+                // menu (decorative fonts, mixed columns, prices) — Gemini reads the whole
+                // photo directly instead.
+                runCatching { GeminiPhotoTranslator.translate(bitmap, language) }
+                    .onSuccess { photoTranslateResult = it }
                     .onFailure { photoTranslateError = it.message ?: "Something went wrong." }
                 photoTranslateLoading = false
             }

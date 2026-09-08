@@ -17,6 +17,13 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Real phones are arm64-v8a (or armeabi-v7a on older/budget devices) — x86/x86_64
+        // only matter for some emulators, and WebRTC's native libraries for all four
+        // architectures are a big chunk of the installed app's size.
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+        }
     }
 
     buildTypes {
@@ -73,11 +80,19 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
     // Firebase
-    implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
+    implementation(platform("com.google.firebase:firebase-bom:34.18.0"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
     implementation("com.google.firebase:firebase-messaging-ktx")
+    // Gemini access for photo-menu translation, called straight from the app (no separate
+    // backend needed) — kept safe from key-extraction because there's no API key embedded
+    // at all; access is gated by App Check (below) instead.
+    implementation("com.google.firebase:firebase-ai")
+    // Proves to Google's servers that Firebase AI Logic calls are coming from a genuine,
+    // unmodified install of this app (via Play Integrity), not a scraped/embedded key
+    // being called from somewhere else — required for Firebase AI Logic since mid-2026.
+    implementation("com.google.firebase:firebase-appcheck-playintegrity")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
@@ -102,9 +117,6 @@ dependencies {
     // Voice translation (translate a typed message, speak it, send as a voice note)
     implementation("com.google.mlkit:translate:17.0.3")
     implementation("com.google.mlkit:language-id:17.0.6")
-
-    // Photo translation (extract text from a menu/sign/document, on-device, Latin script)
-    implementation("com.google.mlkit:text-recognition:16.0.1")
 
     // QR code quick-connect: scan a contact's code to jump straight into a chat with them
     implementation("com.google.mlkit:barcode-scanning:17.3.0")

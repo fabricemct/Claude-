@@ -277,10 +277,13 @@ speak their language:
   from the device's own `TimeZone.getDefault()` on every sign-in.
 - **Photo translation** — the scanner icon in the composer: pick a
   language, photograph a menu/sign/document, and get the translated text
-  back with a "Send to chat" option. Text is extracted on-device with ML
-  Kit's Latin-script text recognizer (`PhotoTextRecognizer.kt`) — free, no
-  cloud call, works offline. Non-Latin scripts (e.g. Japanese, Arabic,
-  Devanagari) aren't recognized by this recognizer.
+  back with a "Send to chat" option. Reads and translates the photo via
+  Gemini (`GeminiPhotoTranslator.kt`), called through Firebase AI Logic —
+  no API key embedded in the app (see "Firebase AI Logic setup" below).
+  An earlier on-device (ML Kit) version only reliably read a handful of
+  words off a real restaurant menu (decorative fonts, mixed columns,
+  prices), which is why this needs a network call and a small per-photo
+  cost (a small fraction of a cent on the cheapest Gemini Flash tier).
 - **Quick travel phrases** — inside the Translate menu, "📖 Quick travel
   phrases" offers a fixed list of common phrases (hello, thank you, where's
   the bathroom, how much does this cost, etc.), which you then translate
@@ -488,6 +491,25 @@ service firebase.storage {
   }
 }
 ```
+
+### Firebase AI Logic setup (for photo translation)
+
+Photo translation calls Gemini through Firebase AI Logic — no API key is
+embedded in the app (it can't be extracted from the APK the way a raw key
+could). This needs two things enabled in the Firebase console, once:
+
+1. **Upgrade to the Blaze (pay-as-you-go) plan** if not already on it —
+   required for any Firebase AI Logic usage. Cost is tiny for this feature:
+   the app uses `gemini-2.5-flash-lite`, the cheapest Gemini tier with
+   vision support, and a single photo translation typically costs a small
+   fraction of a cent.
+2. In the Firebase console, go to **Build → AI Logic** (or search "AI
+   Logic" in the console's search bar) and follow the guided setup — this
+   enables the Gemini Developer API for the project and, as of mid-2026,
+   also walks you through enabling **App Check** with the **Play Integrity**
+   provider (already wired up in code, in `WhatsChatApp.kt`) — this is what
+   proves calls are coming from a genuine install of this app rather than a
+   scraped/leaked key being called from elsewhere.
 
 ## Build & run
 
