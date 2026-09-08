@@ -295,7 +295,8 @@ fun ChatScreen(
                     // reading order) instead of redrawing it over the photo — trying to fit
                     // a translation back into the original text's box on a real menu (mixed
                     // fonts, prices, columns) produced an unreadable mess.
-                    lines.joinToString("\n") { line -> voiceTranslator.translate(line.text, language) }
+                    val translatedLines = lines.map { line -> voiceTranslator.translate(line.text, language) }
+                    translatedLines.joinToString("\n")
                 }.onSuccess { photoTranslateResult = it }
                     .onFailure { photoTranslateError = it.message ?: "Something went wrong." }
                 photoTranslateLoading = false
