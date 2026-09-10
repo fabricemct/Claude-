@@ -70,7 +70,11 @@ class CallViewModel(
     private fun startRingback() {
         if (!isCaller) return
         runCatching {
-            ToneGenerator(AudioManager.STREAM_VOICE_CALL, ToneGenerator.MAX_VOLUME).also {
+            // STREAM_VOICE_CALL only reliably plays while Android's own telephony stack
+            // thinks a real cellular call is active, which is never true for a VoIP call
+            // like this one — it went silent after the audio-routing changes needed for
+            // the WebRTC fixes. STREAM_MUSIC plays regardless of call state.
+            ToneGenerator(AudioManager.STREAM_MUSIC, ToneGenerator.MAX_VOLUME).also {
                 it.startTone(ToneGenerator.TONE_SUP_RINGTONE)
                 ringbackTone = it
             }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -78,6 +79,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
@@ -235,6 +237,10 @@ fun ChatScreen(
     var translateTargetMessageId by remember { mutableStateOf<String?>(null) }
     var showMessageLanguagePicker by remember { mutableStateOf(false) }
     var messageActionError by remember { mutableStateOf<String?>(null) }
+    // The very first translation into a given language downloads a small (~30MB) ML
+    // Kit model, which can take a while on a slow connection — this makes that wait
+    // visible instead of the picker just closing with nothing happening for 25+ seconds.
+    var messageActionLoading by remember { mutableStateOf(false) }
 
     // Per-contact settings: a preferred language for this conversation (used
     // as the default target everywhere in this chat) and whether incoming
@@ -319,11 +325,10 @@ fun ChatScreen(
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
+        // Doesn't auto-start a recording on grant: by the time this callback fires the
+        // system permission dialog has already taken over the touch, so the press-and-hold
+        // gesture that triggered it is long over. The user just holds the mic again.
         micGranted = granted
-        if (granted) {
-            voiceRecorder.start()
-            isRecording = true
-        }
     }
     // A separate launcher from the one above: granting mic access here should
     // just unlock the speak-to-translate flow, not also start a plain voice
@@ -332,22 +337,27 @@ fun ChatScreen(
         ActivityResultContracts.RequestPermission()
     ) { granted -> micGranted = granted }
 
-    fun toggleRecording() {
-        if (isRecording) {
-            val pcm = voiceRecorder.stop()
-            isRecording = false
-            if (pcm.isNotEmpty()) {
-                val resampled = PcmResampler.resample(pcm, VoiceRecorder.SAMPLE_RATE, selectedVoiceEffect)
-                val file = File(context.cacheDir, "voice_${System.currentTimeMillis()}.wav")
-                WavFile.write(file, resampled, VoiceRecorder.SAMPLE_RATE)
-                val durationMs = (resampled.size / 2).toLong() * 1000L / VoiceRecorder.SAMPLE_RATE
-                viewModel.sendAudio(file, durationMs)
-            }
-        } else if (micGranted) {
-            voiceRecorder.start()
-            isRecording = true
-        } else {
+    // Press-and-hold to record, release to send — starting/stopping are two separate
+    // calls (instead of one toggle) so a press gesture can drive them directly.
+    fun startRecording() {
+        if (!micGranted) {
             micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        voiceRecorder.start()
+        isRecording = true
+    }
+
+    fun stopAndSendRecording() {
+        if (!isRecording) return
+        val pcm = voiceRecorder.stop()
+        isRecording = false
+        if (pcm.isNotEmpty()) {
+            val resampled = PcmResampler.resample(pcm, VoiceRecorder.SAMPLE_RATE, selectedVoiceEffect)
+            val file = File(context.cacheDir, "voice_${System.currentTimeMillis()}.wav")
+            WavFile.write(file, resampled, VoiceRecorder.SAMPLE_RATE)
+            val durationMs = (resampled.size / 2).toLong() * 1000L / VoiceRecorder.SAMPLE_RATE
+            viewModel.sendAudio(file, durationMs)
         }
     }
 
@@ -699,10 +709,12 @@ fun ChatScreen(
                             val original = messages.firstOrNull { it.messageId == msgId }?.text
                             showMessageLanguagePicker = false
                             if (msgId != null && original != null) {
+                                messageActionLoading = true
                                 scope.launch {
                                     runCatching { voiceTranslator.translate(original, language) }
                                         .onSuccess { messageTranslations = messageTranslations + (msgId to it) }
                                         .onFailure { messageActionError = it.message ?: "Something went wrong." }
+                                    messageActionLoading = false
                                 }
                             }
                         }) {
@@ -715,6 +727,23 @@ fun ChatScreen(
             dismissButton = {
                 TextButton(onClick = { showMessageLanguagePicker = false }) { Text("Cancel") }
             }
+        )
+    }
+
+    if (messageActionLoading) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Translating...") },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    Text(
+                        "The first translation into a language downloads a small language pack — this can take a bit.",
+                        modifier = Modifier.padding(start = 12.dp)
+                    )
+                }
+            },
+            confirmButton = {}
         )
     }
 
@@ -961,12 +990,36 @@ fun ChatScreen(
                             onClick = { showPhotoTranslateLanguagePicker = true },
                             tint = Color(0xFF00ACC1)
                         )
-                        TooltipIconButton(
-                            icon = Icons.Filled.Mic,
-                            description = if (isRecording) "Stop and send" else "Record a voice message",
-                            onClick = { toggleRecording() },
-                            tint = if (isRecording) Color(0xFFE53935) else Color(0xFF9C27B0)
-                        )
+                        // Press and hold to record, release to send — a tap target isn't
+                        // enough here, so this is a plain Box with its own gesture
+                        // detector instead of the tap-only TooltipIconButton used above.
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .pointerInput(micGranted) {
+                                    detectTapGestures(
+                                        onPress = {
+                                            if (!micGranted) {
+                                                micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                                return@detectTapGestures
+                                            }
+                                            startRecording()
+                                            try {
+                                                awaitRelease()
+                                            } finally {
+                                                stopAndSendRecording()
+                                            }
+                                        }
+                                    )
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Filled.Mic,
+                                contentDescription = if (isRecording) "Recording... release to send" else "Hold to record a voice message",
+                                tint = if (isRecording) Color(0xFFE53935) else Color(0xFF9C27B0)
+                            )
+                        }
                         TooltipIconButton(
                             icon = Icons.Filled.TheaterComedy,
                             description = "Voice for your next recording: ${selectedVoiceEffect.emoji} ${selectedVoiceEffect.label}",
@@ -997,7 +1050,7 @@ fun ChatScreen(
                             .weight(1f)
                             .padding(horizontal = 4.dp),
                         shape = RoundedCornerShape(24.dp),
-                        placeholder = { Text(if (isRecording) "Recording... tap mic to stop" else "Message") }
+                        placeholder = { Text(if (isRecording) "Recording... release mic to send" else "Message") }
                     )
                     TooltipIconButton(
                         icon = Icons.Filled.Send,
