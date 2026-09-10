@@ -770,7 +770,13 @@ fun ChatScreen(
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
                     AppLanguage.entries.forEach { language ->
-                        TextButton(onClick = { viewModel.setPreferredLanguage(language.mlKitCode) }) {
+                        TextButton(onClick = {
+                            viewModel.setPreferredLanguage(language.mlKitCode)
+                            // Picking a language here is a clear enough signal on its own —
+                            // requiring a second, separate toggle afterward just meant incoming
+                            // messages silently never got translated for anyone who missed it.
+                            viewModel.setAutoTranslate(true)
+                        }) {
                             Text(
                                 "${language.flag} ${language.label}" +
                                     if (language == preferredLanguage) " ✓" else ""
