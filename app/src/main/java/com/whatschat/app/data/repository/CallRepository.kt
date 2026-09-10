@@ -1,5 +1,6 @@
 package com.whatschat.app.data.repository
 
+import android.util.Log
 import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.FirebaseFirestore
 import com.whatschat.app.data.model.Call
@@ -10,6 +11,8 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import org.webrtc.IceCandidate
 import java.util.UUID
+
+private const val TAG = "CallRepository"
 
 /**
  * Firestore-backed signaling channel for 1:1 WebRTC voice calls. Firestore
@@ -32,6 +35,7 @@ class CallRepository(
             createdAt = System.currentTimeMillis()
         )
         callsCollection.document(callId).set(call).await()
+        Log.d(TAG, "createCall: callId=$callId callerId=$callerId calleeId=$calleeId isVideo=$isVideo")
         return callId
     }
 
@@ -40,16 +44,34 @@ class CallRepository(
         val registration = callsCollection
             .whereEqualTo("calleeId", myUid)
             .whereEqualTo("status", CallStatus.RINGING.name)
-            .addSnapshotListener { snapshot, _ ->
+            .addSnapshotListener { snapshot, error ->
+                // A silently-dropped error here (e.g. a security-rules rejection) previously
+                // looked identical to "no incoming call" — nothing happened, with no way to
+                // tell why. Logging it is the only way to see a rules/permission problem.
+                if (error != null) {
+                    Log.w(TAG, "observeIncomingCalls failed for uid=$myUid", error)
+                    trySend(null)
+                    return@addSnapshotListener
+                }
                 val call = snapshot?.documents?.firstOrNull()
                     ?.toObject(Call::class.java)?.copy(callId = snapshot.documents.first().id)
+                Log.d(
+                    TAG,
+                    "observeIncomingCalls: uid=$myUid matchingDocs=${snapshot?.documents?.size ?: 0} " +
+                        "found=${call != null}"
+                )
                 trySend(call)
             }
         awaitClose { registration.remove() }
     }
 
     fun observeCall(callId: String): Flow<Call?> = callbackFlow {
-        val registration = callsCollection.document(callId).addSnapshotListener { snapshot, _ ->
+        val registration = callsCollection.document(callId).addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                Log.w(TAG, "observeCall failed for callId=$callId", error)
+                trySend(null)
+                return@addSnapshotListener
+            }
             trySend(snapshot?.toObject(Call::class.java)?.copy(callId = snapshot.id))
         }
         awaitClose { registration.remove() }
