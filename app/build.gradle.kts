@@ -46,6 +46,9 @@ android {
 
     buildFeatures {
         compose = true
+        // So WhatsChatApp.kt can pick the App Check provider (debug vs Play Integrity)
+        // based on BuildConfig.DEBUG.
+        buildConfig = true
     }
 
     packaging {
@@ -102,6 +105,13 @@ dependencies {
     // unmodified install of this app (via Play Integrity), not a scraped/embedded key
     // being called from somewhere else — required for Firebase AI Logic since mid-2026.
     implementation("com.google.firebase:firebase-appcheck-playintegrity")
+    // Play Integrity itself is meant for apps Google Play has some awareness of
+    // (published, or at least uploaded to Play Console); a plain sideloaded debug build
+    // kept failing attestation ("App attestation failed") even with a correctly
+    // registered signing fingerprint. WhatsChatApp.kt uses this instead for debug
+    // builds — one manually-approved token per install, which is what testing among
+    // friends without a Play Store listing actually needs.
+    implementation("com.google.firebase:firebase-appcheck-debug")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
