@@ -1,0 +1,148 @@
+package com.whatschat.app.ui.viewmodel
+
+import android.net.Uri
+import androidx.lifecycle.ViewModel
+import java.io.File
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.whatschat.app.data.model.Chat
+import com.whatschat.app.data.model.Message
+import com.whatschat.app.data.model.User
+import com.whatschat.app.data.repository.AuthRepository
+import com.whatschat.app.data.repository.ChatRepository
+import com.whatschat.app.data.repository.UserRepository
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+private const val TYPING_IDLE_DELAY_MS = 3000L
+
+class ChatViewModel(
+    private val chatId: String,
+    private val authRepository: AuthRepository = AuthRepository(),
+    private val chatRepository: ChatRepository = ChatRepository(),
+    private val userRepository: UserRepository = UserRepository()
+) : ViewModel() {
+
+    val currentUid: String? get() = authRepository.currentUser?.uid
+
+    private val _messages = MutableStateFlow<List<Message>>(emptyList())
+    val messages: StateFlow<List<Message>> = _messages.asStateFlow()
+
+    private val _otherIsTyping = MutableStateFlow(false)
+    val otherIsTyping: StateFlow<Boolean> = _otherIsTyping.asStateFlow()
+
+    /** The shared chat document — carries each participant's own preferred-language/auto-translate settings, keyed by uid. */
+    private val _chat = MutableStateFlow<Chat?>(null)
+    val chat: StateFlow<Chat?> = _chat.asStateFlow()
+
+    /** The other participant's live profile (used for their current local time). */
+    private val _otherUser = MutableStateFlow<User?>(null)
+    val otherUser: StateFlow<User?> = _otherUser.asStateFlow()
+
+    private var typingIdleJob: Job? = null
+    private var typingFlagSet = false
+
+    init {
+        viewModelScope.launch {
+            chatRepository.observeMessages(chatId).collect { _messages.value = it }
+        }
+        viewModelScope.launch {
+            chatRepository.observeTyping(chatId).collect { typingUid ->
+                _otherIsTyping.value = typingUid.isNotBlank() && typingUid != currentUid
+            }
+        }
+        viewModelScope.launch {
+            chatRepository.observeChat(chatId).collect { _chat.value = it }
+        }
+        val otherUid = chatId.split("_").firstOrNull { it != currentUid }
+        if (otherUid != null) {
+            viewModelScope.launch {
+                userRepository.observeUser(otherUid).collect { _otherUser.value = it }
+            }
+        }
+    }
+
+    fun setPreferredLanguage(languageCode: String) {
+        val uid = currentUid ?: return
+        viewModelScope.launch { chatRepository.setPreferredLanguage(chatId, uid, languageCode) }
+    }
+
+    fun setAutoTranslate(enabled: Boolean) {
+        val uid = currentUid ?: return
+        viewModelScope.launch { chatRepository.setAutoTranslate(chatId, uid, enabled) }
+    }
+
+    /** Call on every keystroke in the composer to keep the other user's "typing..." status live. */
+    fun onComposerTextChanged(text: String) {
+        val uid = currentUid ?: return
+        typingIdleJob?.cancel()
+        if (text.isBlank()) {
+            setTyping(uid, false)
+            return
+        }
+        if (!typingFlagSet) setTyping(uid, true)
+        typingIdleJob = viewModelScope.launch {
+            delay(TYPING_IDLE_DELAY_MS)
+            setTyping(uid, false)
+        }
+    }
+
+    private fun setTyping(uid: String, isTyping: Boolean) {
+        typingFlagSet = isTyping
+        viewModelScope.launch { chatRepository.setTyping(chatId, uid, isTyping) }
+    }
+
+    fun sendText(text: String) {
+        val uid = currentUid ?: return
+        if (text.isBlank()) return
+        typingIdleJob?.cancel()
+        typingFlagSet = false
+        viewModelScope.launch {
+            chatRepository.sendTextMessage(chatId, uid, text.trim())
+        }
+    }
+
+    fun sendImage(uri: Uri) {
+        val uid = currentUid ?: return
+        viewModelScope.launch {
+            chatRepository.sendImageMessage(chatId, uid, uri)
+        }
+    }
+
+    fun sendAudio(audioFile: File, durationMs: Long) {
+        val uid = currentUid ?: return
+        viewModelScope.launch {
+            chatRepository.sendAudioMessage(chatId, uid, audioFile, durationMs)
+            audioFile.delete()
+        }
+    }
+
+    fun sendSticker(emoji: String) {
+        val uid = currentUid ?: return
+        viewModelScope.launch {
+            chatRepository.sendSticker(chatId, uid, emoji)
+        }
+    }
+
+    fun deleteMessage(messageId: String) {
+        viewModelScope.launch {
+            chatRepository.deleteMessage(chatId, messageId)
+        }
+    }
+
+    /** Deletes several messages at once (e.g. from multi-select), one at a time so the chat preview stays consistent as each is removed. */
+    fun deleteMessages(messageIds: Set<String>) {
+        viewModelScope.launch {
+            messageIds.forEach { chatRepository.deleteMessage(chatId, it) }
+        }
+    }
+
+    class Factory(private val chatId: String) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T = ChatViewModel(chatId) as T
+    }
+}

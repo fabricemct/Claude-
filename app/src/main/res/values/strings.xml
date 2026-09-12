@@ -1,0 +1,41 @@
+<resources>
+    <string name="app_name">WhatsChat</string>
+
+    <!-- Login -->
+    <string name="login_subtitle">Log in to continue</string>
+    <string name="label_email">Email</string>
+    <string name="label_password">Password</string>
+    <string name="action_log_in">Log in</string>
+    <string name="login_no_account">Don\'t have an account? Sign up</string>
+
+    <!-- Register -->
+    <string name="register_title">Create account</string>
+    <string name="label_name">Name</string>
+    <string name="label_password_min">Password (6+ characters)</string>
+    <string name="action_sign_up">Sign up</string>
+    <string name="register_has_account">Already have an account? Log in</string>
+
+    <!-- Chat list -->
+    <string name="chatlist_empty">No contacts yet. Once someone else signs up, they\'ll appear here.</string>
+    <string name="section_chats">Chats</string>
+    <string name="section_contacts">Contacts</string>
+    <string name="cd_profile">Profile</string>
+    <string name="cd_settings">Settings</string>
+
+    <!-- Profile -->
+    <string name="profile_title">Profile</string>
+    <string name="cd_back">Back</string>
+    <string name="profile_tap_photo">Tap to change photo</string>
+    <string name="label_status">Status</string>
+    <string name="action_saving">Saving…</string>
+    <string name="action_save">Save</string>
+    <string name="action_log_out">Log out</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_language">App language</string>
+    <string name="settings_language_system">Follow phone language</string>
+    <string name="settings_language_english">English</string>
+    <string name="settings_language_french">French</string>
+    <string name="settings_language_note">Changing this may reopen the app to the chat list — that\'s normal.</string>
+</resources>
